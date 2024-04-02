@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/any.proto";
+
+import "scalapb/scalapb.proto";
+
+option java_multiple_files = true;
+
+import "chatroom.proto";
+
+package com.domain.user;
+
+
+option (scalapb.options) = {
+  lenses: true,
+  preserve_unknown_fields: false,
+  no_default_values_in_constructor: false,
+  no_primitive_wrappers: true,
+  single_file: true,
+  preamble: "sealed trait UserTwinCmd extends scalapb.GeneratedMessage",
+};
+
+
+message ConnectUsr {
+  option (scalapb.message).extends = "UserTwinCmd";
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
+  string otp = 3 [(scalapb.field).type = "shared.Domain.Otp"];
+}
+
+message DisconnectUsr {
+  option (scalapb.message).extends = "UserTwinCmd";
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
+  string otp = 3 [(scalapb.field).type = "shared.Domain.Otp"];
+}
+

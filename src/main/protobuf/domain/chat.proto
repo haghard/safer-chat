@@ -1,0 +1,132 @@
+syntax = "proto3";
+
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/any.proto";
+
+import "scalapb/scalapb.proto";
+
+import "chatroom.proto";
+
+option java_multiple_files = true;
+
+package com.domain.chat;
+
+option (scalapb.options) = {
+  lenses: true,
+  preserve_unknown_fields: false,
+  no_default_values_in_constructor: false,
+  no_primitive_wrappers: true,
+  single_file: true,
+  preamble: "sealed trait ChatCmd extends scalapb.GeneratedMessage { ",
+  preamble: " def chat: shared.Domain.ChatName ",
+  preamble: "} ",
+  //
+};
+
+message Create {
+  option (scalapb.message).extends = "ChatCmd";
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string replyTo = 2 [(scalapb.field).type = "shared.Domain.ReplyTo"];
+}
+
+message AddUser {
+  option (scalapb.message).extends = "ChatCmd";
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
+  string replyTo = 3 [(scalapb.field).type = "shared.Domain.ReplyTo"];
+}
+
+message RmUser {
+  option (scalapb.message).extends = "ChatCmd";
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
+  string replyTo = 3 [(scalapb.field).type = "shared.Domain.ReplyTo"];
+}
+
+message AuthUser {
+  option (scalapb.message).extends = "ChatCmd";
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
+  string otp = 3 [(scalapb.field).type = "shared.Domain.Otp"];
+  string replyTo = 4 [(scalapb.field).type = "shared.Domain.ReplyTo"];
+}
+
+message ConnectRequest {
+  option (scalapb.message).extends = "ChatCmd";
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
+  string otp = 3 [(scalapb.field).type = "shared.Domain.Otp"];
+  string replyTo = 4 [(scalapb.field).type = "shared.Domain.ReplyTo"];
+}
+
+message Disconnect {
+  option (scalapb.message).extends = "ChatCmd";
+  string user = 1 [(scalapb.field).type = "shared.Domain.Participant"];
+  string chat = 2 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string otp = 3 [(scalapb.field).type = "shared.Domain.Otp"];
+  server.grpc.chat.ClientCmd lastCmd = 4;
+}
+
+message PostMessage {
+  option (scalapb.message).extends = "ChatCmd";
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  map<string, bytes> content = 2;
+  server.grpc.chat.UserInfo userInfo = 3 [(scalapb.field).no_box = true];
+  string replyTo = 4 [(scalapb.field).type = "shared.Domain.ReplyTo"];
+}
+
+message StopChatEntity {
+  option (scalapb.message).extends = "ChatCmd";
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+}
+
+message ChatReply {
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+
+  enum StatusCode {
+    Ok     = 0;
+    Error    = 1;
+    ChatExists = 2;
+    UserExists = 3;
+    UnknownUser = 4;
+    AuthorizationError = 5;
+    UnknownChat = 6;
+    AlreadyConnected = 7;
+  }
+
+  StatusCode statusCode = 2;
+
+  string sourceRefStr = 3;
+  string sinkRefStr = 4;
+}
+
+message CreateChat {
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+}
+
+message AddUserReq {
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
+}
+
+message RmUserReq {
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
+}
+
+
+/*
+message UUID2 {
+  option (scalapb.message).type = "java.util.UUID";
+  string value = 1;
+}
+message ValuesPB {
+  google.protobuf.Timestamp when = 1;
+  google.protobuf.StringValue maybeStr = 2;
+  google.protobuf.Int32Value maybeInt = 3;
+  google.protobuf.Int64Value maybeLong = 4;
+  google.protobuf.DoubleValue maybeDouble = 5;
+  UUID2 uuid = 6;
+}
+*/
