@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/any.proto";
+
+import "scalapb/scalapb.proto";
+
+import "chatroom.proto";
+
+option java_multiple_files = true;
+
+package com.domain.chat.request;
+
+option (scalapb.options) = {
+  lenses: true,
+  preserve_unknown_fields: false,
+  no_default_values_in_constructor: false,
+  no_primitive_wrappers: true,
+  single_file: true,
+  preamble: "sealed trait ApiReq extends scalapb.GeneratedMessage { ",
+  preamble: " def chat: shared.Domain.ChatName ",
+  preamble: "} ",
+};
+
+
+message CreateChatReq {
+  option (scalapb.message).extends = "ApiReq";
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+}
+
+message AddUserReq {
+  option (scalapb.message).extends = "ApiReq";
+
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
+}
+
+message RmUserReq {
+  option (scalapb.message).extends = "ApiReq";
+
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
+}

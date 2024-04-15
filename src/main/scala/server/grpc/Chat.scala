@@ -12,7 +12,6 @@ import scala.concurrent.*
 import java.nio.charset.*
 import java.util.concurrent.ConcurrentHashMap
 import shared.*
-import server.grpc.chat.ChangeDataCapture.*
 import server.grpc.state.ChatState
 import org.apache.pekko.*
 import org.apache.pekko.actor.typed.*
@@ -21,10 +20,11 @@ import org.apache.pekko.cluster.sharding.typed.scaladsl.*
 import org.apache.pekko.persistence.typed.state.scaladsl.*
 import org.apache.pekko.stream.*
 import org.apache.pekko.stream.scaladsl.*
-import org.apache.pekko.util.Timeout
 import shared.Domain.{ ChatName, ReplyTo }
 import server.grpc.chat.*
 import org.apache.pekko.actor.typed.scaladsl.adapter.TypedSchedulerOps
+import org.slf4j.Logger
+import org.apache.pekko.actor.Scheduler
 
 object Chat {
 
@@ -46,7 +46,7 @@ object Chat {
     }
 
   def writeSingleMsg(
-      requestId: String,
+      reqId: String,
       clientCmd: ClientCmd,
     )(using
       sharding: ClusterSharding,
@@ -54,8 +54,8 @@ object Chat {
       resolver: ActorRefResolver,
     ): Future[ServerCmd] = {
     val p = Promise[ServerCmd]()
-    val respondee = sys.systemActorOf(Respondee(requestId, p), requestId)
     val cmd = ServerCmd(clientCmd.chat, clientCmd.content, clientCmd.userInfo)
+    val respondee = sys.systemActorOf(Respondee(reqId, p), reqId)
     sharding
       .entityRefFor(Chat.TypeKey, clientCmd.chat.raw())
       .tell(PostMessage(cmd.chat, cmd.content, cmd.userInfo, ReplyTo[ServerCmd].toCustom(respondee)))
@@ -69,10 +69,16 @@ object Chat {
     ): Behavior[ChatCmd] =
     Behaviors.setup { ctx =>
       given resolver: ActorRefResolver = ActorRefResolver(ctx.system)
-      given streamRes: stream.StreamRefResolver = stream.StreamRefResolver(ctx.system)
+
+      given strRefResolver: stream.StreamRefResolver = stream.StreamRefResolver(ctx.system)
+
       given sys: ActorSystem[?] = ctx.system
+
       given chatRoom: ActorContext[ChatCmd] = ctx
-      given to: util.Timeout = util.Timeout(3.seconds)
+
+      given sharding: ClusterSharding = ClusterSharding(sys)
+
+      given sch: Scheduler = sys.scheduler.toClassic
 
       DurableStateBehavior[ChatCmd, ChatState](
         persistence.typed.PersistenceId.ofUniqueId(chatId.raw()),
@@ -94,16 +100,14 @@ object Chat {
       appCfg: AppConfig,
     )(using
       sys: ActorSystem[?],
+      sch: Scheduler,
       resolver: actor.typed.ActorRefResolver,
-      streamRefs: stream.StreamRefResolver,
+      strRefResolvers: stream.StreamRefResolver,
       ctx: ActorContext[ChatCmd],
-      to: util.Timeout,
+      sharding: ClusterSharding,
     ): (ChatState, ChatCmd) => Effect[ChatState] = { (state, cmd) =>
-    val logger = ctx.log
-
-    given sharding: ClusterSharding = ClusterSharding(sys)
     given ec: scala.concurrent.ExecutionContext = sys.executionContext
-    given sch: org.apache.pekko.actor.Scheduler = sys.scheduler.toClassic
+    val logger: org.slf4j.Logger = sys.log
 
     cmd match {
       case Create(chat, replyTo) =>
@@ -126,17 +130,17 @@ object Chat {
         }
 
       case AddUser(chat, user, replyTo) =>
+        val replyTo0 = ReplyTo[ChatReply].toBase(replyTo)
         state.name match {
           case Some(chatName) =>
             val rps = state.registeredParticipants
-            logger.info(s"Participants:[${rps.mkString(",")}]")
+            logger.info(s"Registered-participants:[${rps.mkString(",")}]")
 
             if (state.registeredParticipants.contains(user)) {
               Effect
                 .none[ChatState]
                 .thenRun(_ => logger.info("{} already registered", user.raw()))
-                .thenReply(ReplyTo[ChatReply].toBase(replyTo))(_ => ChatReply(chat, ChatReply.StatusCode.UserExists))
-
+                .thenReply(replyTo0)(_ => ChatReply(chat, ChatReply.StatusCode.UserExists))
             } else {
               Effect
                 .persist(state.withNewUser(user, chat, replyTo))
@@ -145,7 +149,7 @@ object Chat {
             }
           case None =>
             Effect
-              .reply(ReplyTo[ChatReply].toBase(replyTo))(ChatReply(chat, ChatReply.StatusCode.UnknownChat))
+              .reply(replyTo0)(ChatReply(chat, ChatReply.StatusCode.UnknownChat))
         }
 
       case RmUser(chat, user, replyTo) =>
@@ -155,12 +159,14 @@ object Chat {
           .thenStop()
 
       case AuthUser(chat, user, otp, replyTo) =>
+        val replyTo0 = ReplyTo[ChatReply].toBase(replyTo)
+
         state.name match {
           case Some(chatName) =>
             if (state.registeredParticipants.contains(user)) {
               if (state.onlineParticipants.contains(user))
                 Effect
-                  .reply(ReplyTo[ChatReply].toBase(replyTo))(ChatReply(chat, ChatReply.StatusCode.AlreadyConnected))
+                  .reply(replyTo0)(ChatReply(chat, ChatReply.StatusCode.AlreadyConnected))
               else {
                 import com.bastiaanjansen.otp.*
                 val maybeOtp = shared.base64Decode(user.raw()).map { secret =>
@@ -175,35 +181,36 @@ object Chat {
                 }
                 if (maybeOtp.map(_.verify(otp.raw())).getOrElse(false)) {
                   Effect
-                    .reply(ReplyTo[ChatReply].toBase(replyTo))(ChatReply(chat, ChatReply.StatusCode.Ok))
+                    .reply(replyTo0)(ChatReply(chat, ChatReply.StatusCode.Ok))
                 } else {
                   Effect
-                    .reply(ReplyTo[ChatReply].toBase(replyTo))(ChatReply(chat, ChatReply.StatusCode.AuthorizationError))
+                    .reply(replyTo0)(ChatReply(chat, ChatReply.StatusCode.AuthorizationError))
                 }
               }
             } else {
-              Effect.reply(ReplyTo[ChatReply].toBase(replyTo))(ChatReply(chat, ChatReply.StatusCode.UnknownUser))
+              Effect.reply(replyTo0)(ChatReply(chat, ChatReply.StatusCode.UnknownUser))
             }
           case None =>
             Effect
-              .reply(ReplyTo[ChatReply].toBase(replyTo))(ChatReply(chat, ChatReply.StatusCode.UnknownChat))
+              .reply(replyTo0)(ChatReply(chat, ChatReply.StatusCode.UnknownChat))
         }
 
       case ConnectRequest(chat, user, otp, replyTo) =>
         // val settings = StreamRefAttributes.subscriptionTimeout(3.seconds).and(stream.Attributes.inputBuffer(2, 4))
         logger.info("ConnectRequest {} - Online:[{}]", user.raw(), state.onlineParticipants.mkString(","))
 
+        val replyTo0 = ReplyTo[ChatReply].toBase(replyTo)
         state.maybeActiveHub match {
           case Some(hub) =>
             val srcRef = hub.src.runWith(StreamRefs.sourceRef[ServerCmd]())
             val sinkRef = hub.sink.runWith(StreamRefs.sinkRef[ClientCmd]())
             Effect
               .persist(state.withUsrConnected(user, otp))
-              .thenReply(ReplyTo[ChatReply].toBase(replyTo))(_ =>
+              .thenReply(replyTo0)(_ =>
                 ChatReply(
                   chat = chat,
-                  sourceRefStr = streamRefs.toSerializationFormat(srcRef),
-                  sinkRefStr = streamRefs.toSerializationFormat(sinkRef),
+                  sourceRefStr = strRefResolvers.toSerializationFormat(srcRef),
+                  sinkRefStr = strRefResolvers.toSerializationFormat(sinkRef),
                 )
               )
 
@@ -212,7 +219,7 @@ object Chat {
               MergeHub
                 .source[ClientCmd](1)
                 .mapAsync(1) { clientCmd =>
-                  // Uuids.timeBased().toString
+                  // val requestId = CassandraTimeUUID(Uuids.timeBased().toString)
                   val requestId = wvlet.airframe.ulid.ULID.newULID.toString
                   pattern.retry(
                     () => writeSingleMsg(requestId, clientCmd),
@@ -233,11 +240,11 @@ object Chat {
 
             Effect
               .persist(state.withFirstUsrConnected(chatRoomHub, user, otp))
-              .thenReply(ReplyTo[ChatReply].toBase(replyTo))(_ =>
+              .thenReply(replyTo0)(_ =>
                 ChatReply(
                   chat,
-                  sourceRefStr = streamRefs.toSerializationFormat(srcRef),
-                  sinkRefStr = streamRefs.toSerializationFormat(sinkRef),
+                  sourceRefStr = strRefResolvers.toSerializationFormat(srcRef),
+                  sinkRefStr = strRefResolvers.toSerializationFormat(sinkRef),
                 )
               )
         }
@@ -248,9 +255,9 @@ object Chat {
           .thenNoReply()
 
       case PostMessage(chat, content, userInfo, replyTo) =>
-        // DurableStateBehavior.lastSequenceNumber(ctx)
+        // val lsn = DurableStateBehavior.lastSequenceNumber(ctx)
         Effect
-          .persist(state.withMsgPosted(content, userInfo, replyTo))
+          .persist(state.withMsgPosted(chat, content, userInfo, replyTo))
           .thenNoReply()
 
       case StopChatEntity(chat) =>

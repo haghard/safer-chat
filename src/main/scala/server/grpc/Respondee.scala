@@ -17,22 +17,23 @@ object Respondee {
   def apply(
       reqId: String,
       p: Promise[ServerCmd],
-      timeout: FiniteDuration = 5.seconds,
+      writeTimeout: FiniteDuration = 3.seconds,
     ): Behavior[ServerCmd] =
     Behaviors
       .setup[ServerCmd] { ctx =>
         val logger = ctx.log
         val start = System.currentTimeMillis()
         Behaviors.withTimers { timers =>
-          timers.startSingleTimer(ServerCmd.defaultInstance, timeout)
+          timers.startSingleTimer(reqId, ServerCmd.defaultInstance, writeTimeout)
           Behaviors
             .receiveMessage[ServerCmd] {
               case ServerCmd.defaultInstance =>
+                timers.cancel(reqId)
                 logger.warn("Write timeout [{}] after {}ms", reqId, System.currentTimeMillis() - start)
                 p.tryFailure(new Exception(s"$reqId timeout"))
                 Behaviors.stopped
               case cmd: ServerCmd =>
-                // logger.warn("Write([{}]) took: {}ms", reqId, System.currentTimeMillis() - start)
+                logger.debug("Write([{}]) took: {}ms", reqId, System.currentTimeMillis() - start)
                 p.trySuccess(cmd)
                 Behaviors.stopped
             }

@@ -65,15 +65,17 @@ lazy val root = project
       "org.apache.pekko" %% "pekko-management-cluster-bootstrap" % "1.0.0",
 
       "ch.qos.logback" % "logback-classic" % "1.2.11",
+      //"ch.qos.logback" % "logback-classic" % "1.4.14"
+
       "org.apache.pekko" %% "pekko-slf4j" % pekkoV,
 
       "com.madgag.spongycastle" % "core" % "1.58.0.0",
       "org.bouncycastle" % "bcpkix-jdk18on" % "1.78",
 
-      "io.aeron" % "aeron-driver" % "1.42.1",
-      "io.aeron" % "aeron-client" % "1.42.1",
+      "io.aeron" % "aeron-driver" % "1.44.1",
+      "io.aeron" % "aeron-client" % "1.44.1",
 
-      "org.wvlet.airframe" %% "airframe-ulid" % "24.3.0",
+      "org.wvlet.airframe" %% "airframe-ulid" % "24.4.0",
       "com.github.bastiaanjansen" % "otp-java" % "2.0.3",
       "com.datastax.oss" % "java-driver-core" % "4.17.0",
     ),
@@ -115,11 +117,13 @@ lazy val root = project
     // make version compatible with docker for publishing
     ThisBuild / dynverSeparator := "-",
     javaOptions ++= Seq(
+      "-XX:+PrintFlagsFinal",
       "-XX:+PrintCommandLineFlags",
       //"-XX:+PrintGCDetails",
       //"-XshowSettings:vm",
-      "-Xmx256M",
+      "-Xmx256m",
       "-XshowSettings:system -version",
+
       /*"-XX:+PrintFieldLayout",*/
       /*"-XX:MaxMetaspaceSize=650m",*/
       /*"-XX:+UseG1GC"*/
@@ -134,13 +138,16 @@ lazy val root = project
       // https://dzone.com/articles/troubleshooting-problems-with-native-off-heap-memo
       // To allow getting native memory stats for threads
       "-XX:NativeMemoryTracking=summary", // detail
-      "-XX:MaxDirectMemorySize=128M",
+      "-XX:MaxDirectMemorySize=128m",
       // "-XX:MetaspaceSize=20M",
       // https://youtu.be/kKigibHrV5I
       // "-XX:-UseAdaptiveSizePolicy", // -UseAdaptiveSizePolicy --disable use
       "-XX:+UseZGC", // https://www.baeldung.com/jvm-zgc-garbage-collector
       "--add-opens",
       "java.base/sun.nio.ch=ALL-UNNAMED",
+
+      //https://youtu.be/vh4qAsxegNY?list=LL
+      "-XX:MaxRAM=412m",
 
       /*
       "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED",

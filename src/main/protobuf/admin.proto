@@ -7,13 +7,14 @@ import "google/protobuf/wrappers.proto";
 option java_multiple_files = true;
 
 import "domain/chat.proto";
+import "request.proto";
 
 package server.grpc.admin;
 
 //google.protobuf.Empty
 
 service Admin {
-  rpc AddChat (com.domain.chat.CreateChat) returns (com.domain.chat.ChatReply) {}
-  rpc AddUser (com.domain.chat.AddUserReq) returns (com.domain.chat.ChatReply) {}
-  rpc RmUser (com.domain.chat.RmUserReq) returns (com.domain.chat.ChatReply) {}
+  rpc AddChat (com.domain.chat.request.CreateChatReq) returns (com.domain.chat.ChatReply) {}
+  rpc AddUser (com.domain.chat.request.AddUserReq) returns (com.domain.chat.ChatReply) {}
+  rpc RmUser (com.domain.chat.request.RmUserReq) returns (com.domain.chat.ChatReply) {}
 }

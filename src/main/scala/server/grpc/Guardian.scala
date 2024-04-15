@@ -71,11 +71,11 @@ object Guardian {
                 .log
                 .info(
                   s"""
-                     |------------- Started: ${cluster.selfMember.details()}  ------------------ 👍✅
-                     |Singleton: [${singleton.details2()}]/Leader:[${cluster.state.leader.getOrElse("")}] 👍✅
-                     |Members:[${membersByAge.map(_.details()).mkString(", ")}] 👍✅
+                     |------------- Started: ${cluster.selfMember.details()}  ------------------ 👍✅🚀
+                     |Singleton: [${singleton.details2()}]/Leader:[${cluster.state.leader.getOrElse("")}] 👍✅🚀
+                     |Members:[${membersByAge.map(_.details()).mkString(", ")}] 👍✅🚀
                      |${server.grpc.BuildInfo.toString}
-                     |PID:${ProcessHandle.current().pid()} JVM: $jvmInfo 👍✅
+                     |PID:${ProcessHandle.current().pid()} JVM: $jvmInfo 👍✅🚀
                      |""".stripMargin
                 )
             }

@@ -6,31 +6,34 @@ package org.apache.pekko.cluster.sharding
 
 import scala.collection.immutable
 import scala.concurrent.Future
-
 import org.apache.pekko.actor.*
 import org.apache.pekko.cluster.ClusterEvent.CurrentClusterState
 import org.apache.pekko.cluster.*
+import org.apache.pekko.cluster.MemberStatus.{ Joining, WeaklyUp }
 import org.apache.pekko.cluster.sharding.ShardCoordinator.ActorSystemDependentAllocationStrategy
 import org.apache.pekko.cluster.sharding.ShardRegion.ShardId
+import org.apache.pekko.cluster.sharding.internal.AbstractLeastShardAllocationStrategy
+import org.apache.pekko.cluster.sharding.internal.AbstractLeastShardAllocationStrategy.RegionEntry
 import org.apache.pekko.event.*
 import org.apache.pekko.routing.ConsistentHash
 
 object ConsistentHashingAllocation {
+  val virtualNodesFactor = 3
+  val JoiningCluster: Set[MemberStatus] = Set(Joining, WeaklyUp)
+
   val empty = Future.successful(Set.empty[ShardId])
 }
 
-final class ConsistentHashingAllocation(rebalanceLimit: Int)
-    extends ActorSystemDependentAllocationStrategy
-    with ClusterShardAllocationMixin {
+final class ConsistentHashingAllocation(rebalanceLimit: Int) extends ActorSystemDependentAllocationStrategy {
 
   import ConsistentHashingAllocation.empty
 
   private var cluster: Cluster = scala.compiletime.uninitialized
   private var log0: LoggingAdapter = scala.compiletime.uninitialized
 
-  private val virtualNodesFactor = 3
   private var hashedByNodes: Vector[Address] = Vector.empty
-  private var consistentHashing: ConsistentHash[Address] = ConsistentHash(Nil, virtualNodesFactor)
+  private var consistentHashing: ConsistentHash[Address] =
+    ConsistentHash(Nil, ConsistentHashingAllocation.virtualNodesFactor)
 
   override def start(system: ActorSystem): Unit = {
     cluster = Cluster(system)
@@ -39,9 +42,9 @@ final class ConsistentHashingAllocation(rebalanceLimit: Int)
 
   protected def log: LoggingAdapter = log0
 
-  override protected def clusterState: CurrentClusterState = cluster.state
+  def clusterState: CurrentClusterState = cluster.state
 
-  override protected def selfMember: Member = cluster.selfMember
+  def selfMember: Member = cluster.selfMember
 
   override def allocateShard(
       requester: ActorRef,
@@ -67,7 +70,9 @@ final class ConsistentHashingAllocation(rebalanceLimit: Int)
     ): Future[Set[ShardId]] = {
 
     val sortedRegionEntries =
-      regionEntriesFor(currentShardAllocations).toVector.sorted(ClusterShardAllocationMixin.shardSuitabilityOrdering)
+      regionEntriesFor(currentShardAllocations)
+        .toVector
+        .sorted(AbstractLeastShardAllocationStrategy.ShardSuitabilityOrdering)
 
     if (isAGoodTimeToRebalance(sortedRegionEntries)) {
       val nodes = nodesForRegions(currentShardAllocations)
@@ -128,7 +133,45 @@ final class ConsistentHashingAllocation(rebalanceLimit: Int)
       if (log.isDebugEnabled)
         log.debug("Update consistent hashing nodes [{}]", sortedNodes.mkString(", "))
       hashedByNodes = sortedNodes
-      consistentHashing = ConsistentHash(sortedNodes, virtualNodesFactor)
+      consistentHashing = ConsistentHash(sortedNodes, ConsistentHashingAllocation.virtualNodesFactor)
     }
   }
+
+  private def isAGoodTimeToRebalance(regionEntries: Iterable[RegionEntry]): Boolean =
+    // Avoid rebalance when rolling update is in progress
+    // (This will ignore versions on members with no shard regions, because of sharding role or not yet completed joining)
+    regionEntries.headOption match {
+      case None => false // empty list of regions, probably not a good time to rebalance...
+      case Some(firstRegion) =>
+        def allNodesSameVersion() =
+          regionEntries.forall(_.member.appVersion == firstRegion.member.appVersion)
+
+        def neededMembersReachable =
+          !clusterState.members.exists(m => m.dataCenter == selfMember.dataCenter && clusterState.unreachable(m))
+
+        // No members in same dc joining, we want that to complete before rebalance, such nodes should reach Up soon
+        def membersInProgressOfJoining =
+          clusterState
+            .members
+            .exists(m => m.dataCenter == selfMember.dataCenter && ConsistentHashingAllocation.JoiningCluster(m.status))
+
+        allNodesSameVersion() && neededMembersReachable && !membersInProgressOfJoining
+    }
+
+  private def regionEntriesFor(currentShardAllocations: Map[ActorRef, immutable.IndexedSeq[ShardId]])
+      : Iterable[RegionEntry] = {
+    val addressToMember: Map[Address, Member] = clusterState.members.iterator.map(m => m.address -> m).toMap
+    currentShardAllocations.flatMap {
+      case (region, shardIds) =>
+        val regionAddress =
+          if (region.path.address.hasLocalScope) selfMember.address
+          else region.path.address
+
+        val memberForRegion = addressToMember.get(regionAddress)
+        // if the member is unknown (very unlikely but not impossible) because of view not updated yet
+        // that node is ignored for this invocation
+        memberForRegion.map(member => RegionEntry(region, member, shardIds))
+    }
+  }
+
 }

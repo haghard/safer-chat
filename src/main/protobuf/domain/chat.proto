@@ -21,7 +21,6 @@ option (scalapb.options) = {
   preamble: "sealed trait ChatCmd extends scalapb.GeneratedMessage { ",
   preamble: " def chat: shared.Domain.ChatName ",
   preamble: "} ",
-  //
 };
 
 message Create {
@@ -74,6 +73,7 @@ message PostMessage {
   map<string, bytes> content = 2;
   server.grpc.chat.UserInfo userInfo = 3 [(scalapb.field).no_box = true];
   string replyTo = 4 [(scalapb.field).type = "shared.Domain.ReplyTo"];
+  //string timeUuid = 4 [(scalapb.field).type = "shared.Domain.CassandraTimeUUID"];
 }
 
 message StopChatEntity {
@@ -101,23 +101,9 @@ message ChatReply {
   string sinkRefStr = 4;
 }
 
-message CreateChat {
-  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
-}
-
-message AddUserReq {
-  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
-  string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
-}
-
-message RmUserReq {
-  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
-  string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
-}
-
 
 /*
-message UUID2 {
+message TimeUUID {
   option (scalapb.message).type = "java.util.UUID";
   string value = 1;
 }

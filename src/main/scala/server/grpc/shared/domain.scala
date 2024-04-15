@@ -4,6 +4,7 @@
 
 package shared
 
+import com.datastax.oss.driver.api.core.uuid.Uuids
 import org.apache.pekko.actor.typed.{ ActorRef, ActorRefResolver }
 import scalapb.TypeMapper
 
@@ -23,6 +24,9 @@ import spray.json.*
 
 def sha256(bts: Array[Byte]): Array[Byte] =
   MessageDigest.getInstance("SHA-256").digest(bts)
+
+def sha3_256(bts: Array[Byte]): Array[Byte] =
+  MessageDigest.getInstance("SHA3-256").digest(bts)
 
 def base64Encode(bs: Array[Byte]): String =
   new String(Base64.getUrlEncoder.withoutPadding.encode(bs))
@@ -241,6 +245,18 @@ object Domain {
 
     given mapper: scalapb.TypeMapper[String, ReplyTo] =
       TypeMapper[String, ReplyTo](ReplyTo(_))(_.raw())
+  }
+
+  opaque type CassandraTimeUUID = String
+
+  object CassandraTimeUUID extends Opq[CassandraTimeUUID, String] {
+    given mapper: scalapb.TypeMapper[String, CassandraTimeUUID] =
+      scalapb.TypeMapper[String, CassandraTimeUUID](CassandraTimeUUID(_))(_.raw())
+
+    extension (timeUuid: CassandraTimeUUID) {
+      def toUnixTs() =
+        Uuids.unixTimestamp(UUID.fromString(timeUuid.raw()))
+    }
   }
 
 }

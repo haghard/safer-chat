@@ -7,9 +7,10 @@ package state
 
 import scala.collection.immutable.HashSet
 import server.grpc.Chat.ChatRoomHub
-import server.grpc.chat.ChangeDataCapture
-import server.grpc.chat.ChangeDataCapture.Payload
-import server.grpc.chat.ChangeDataCapture.*
+import com.domain.chat.cdc.v1.*
+import com.domain.chat.cdc.v1.CdcEnvelope
+import com.domain.chat.cdc.v1.CdcEnvelope.*
+
 import shared.Domain.*
 
 final case class ChatState(
@@ -17,51 +18,48 @@ final case class ChatState(
     registeredParticipants: HashSet[Participant] = HashSet.empty[Participant],
     onlineParticipants: HashSet[Participant] = HashSet.empty[Participant],
     maybeActiveHub: Option[ChatRoomHub] = None,
-    changeDataCapture: server.grpc.chat.ChangeDataCapture = server.grpc.chat.ChangeDataCapture.defaultInstance,
+    cdc: CdcEnvelope = CdcEnvelope.defaultInstance,
     // confirm: scala.concurrent.Promise[_]
-    replyTo: ReplyTo = ReplyTo.empty) {
-  self =>
+    // timeUuid: CassandraTimeUUID, // Optional
+  ) { self =>
 
   def withName(chatName: ChatName, replyTo: ReplyTo) =
     self.copy(
       name = Some(chatName),
-      changeDataCapture = ChangeDataCapture(Payload.Create(CreateChat(chatName))),
-      replyTo = replyTo,
+      cdc = CdcEnvelope(payload = Payload.Created(ChatCreated(chatName, replyTo))),
     )
 
   def withNewUser(
-      user: Participant,
+      newUser: Participant,
       chat: ChatName,
       replyTo: ReplyTo,
     ) = {
-    val allUsers = self.registeredParticipants + user
+    val allUsers = self.registeredParticipants + newUser
     self.copy(
       registeredParticipants = allUsers,
-      changeDataCapture = ChangeDataCapture(Payload.Add(AddParticipant(allUsers.mkString(","), chat))),
-      replyTo = replyTo,
+      cdc = CdcEnvelope(payload = Payload.Added(ParticipantAdded(allUsers.mkString(","), chat, replyTo))),
     )
   }
 
   def withMsgPosted(
+      chat: ChatName,
       content: Map[String, com.google.protobuf.ByteString],
       usrInfo: server.grpc.chat.UserInfo,
       replyTo: ReplyTo,
     ) =
-    self.copy(
-      changeDataCapture = ChangeDataCapture(Payload.PostMsg(PostMsg(content, usrInfo))),
-      replyTo = replyTo,
-    )
+    self
+      .copy(cdc = CdcEnvelope(payload = Payload.Posted(MsgPosted(chat, content, usrInfo, replyTo))))
 
   def withDisconnected(user: Participant, otp: Otp) =
     self.copy(
       onlineParticipants = self.onlineParticipants - user,
-      changeDataCapture = ChangeDataCapture(Payload.Discon(Disconnected(user, otp))),
+      cdc = CdcEnvelope(payload = Payload.DisCntd(Disconnected(user, otp))),
     )
 
   def withUsrConnected(user: Participant, otp: Otp) =
     self.copy(
       onlineParticipants = self.onlineParticipants + user,
-      changeDataCapture = ChangeDataCapture(Payload.Con(Connected(user, otp))),
+      cdc = CdcEnvelope(payload = Payload.Cntd(Connected(user, otp))),
     )
 
   def withFirstUsrConnected(
@@ -72,7 +70,7 @@ final case class ChatState(
     self.copy(
       maybeActiveHub = Some(hub),
       onlineParticipants = self.onlineParticipants + user,
-      changeDataCapture = ChangeDataCapture(Payload.Con(Connected(user, otp))),
+      cdc = CdcEnvelope(payload = Payload.Cntd(Connected(user, otp))),
     )
 
   override def toString: String =

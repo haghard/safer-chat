@@ -47,9 +47,14 @@ message ServerCmd {
   string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
   map<string, bytes> content = 2;
   UserInfo userInfo = 3 [(scalapb.field).no_box = true];
-  string requestTimeUuid = 4;
+  //int64 revision = 4;
+  //string timeUuid = 4 [(scalapb.field).type = "shared.Domain.CassandraTimeUUID"];
 }
 
+
+//message ChangeDataCaptureEnvelop {}
+
+/*
 message ChangeDataCapture {
 
   oneof payload {
@@ -62,18 +67,22 @@ message ChangeDataCapture {
 
   message CreateChat {
     string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+    string replyTo = 2 [(scalapb.field).type = "shared.Domain.ReplyTo"];
   }
 
   message AddParticipant {
     //a comma separated list of users: a,b,c
-    string participantStr = 1;
+    string participants = 1 [(scalapb.field).no_box = true];
     
     string chat = 2 [(scalapb.field).type = "shared.Domain.ChatName"];
+
+    string replyTo = 3 [(scalapb.field).type = "shared.Domain.ReplyTo"];
   }
 
   message Connected {
     string user = 1 [(scalapb.field).type = "shared.Domain.Participant"];
     string otp = 2 [(scalapb.field).type = "shared.Domain.Otp"];
+    string replyTo = 3 [(scalapb.field).type = "shared.Domain.ReplyTo"];
   }
 
   message Disconnected {
@@ -84,5 +93,8 @@ message ChangeDataCapture {
   message PostMsg {
     map<string, bytes> content = 1;
     UserInfo userInfo = 2 [(scalapb.field).no_box = true];
+    string replyTo = 3 [(scalapb.field).type = "shared.Domain.ReplyTo"];
   }
 }
+
+*/

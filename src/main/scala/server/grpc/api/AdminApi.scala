@@ -8,6 +8,9 @@ import scala.concurrent.Future
 import scala.concurrent.duration.*
 import com.domain.chat.*
 import server.grpc.admin.*
+
+import com.domain.chat.request.*
+
 import org.apache.pekko.actor.typed.*
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.Askable
 import shared.AppConfig
@@ -20,12 +23,10 @@ final class AdminApi(appConf: AppConfig, chatRegion: ActorRef[ChatCmd])(using sy
   given to: org.apache.pekko.util.Timeout = org.apache.pekko.util.Timeout(3.seconds)
   given resolver: ActorRefResolver = ActorRefResolver(system)
 
-  // import shared.Conversions.given
-
   def addUser(req: AddUserReq): Future[ChatReply] =
     chatRegion.ask[ChatReply](r => AddUser(req.chat, req.user, ReplyTo[ChatReply].toCustom(r)))
 
-  def addChat(req: CreateChat): Future[ChatReply] =
+  def addChat(req: CreateChatReq): Future[ChatReply] =
     chatRegion.ask[ChatReply](r => Create(req.chat, ReplyTo[ChatReply].toCustom(r)))
 
   def rmUser(in: RmUserReq): Future[ChatReply] = ???

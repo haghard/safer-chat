@@ -35,7 +35,7 @@ object ChatRoomClient {
 
   val Ottawa = server.grpc.chat.Coords(45.41875, -75.70144560830724)
   val Toronto = server.grpc.chat.Coords(43.911806, -80.099738)
-  val chatName = ChatName("bbb")
+  val chatName = ChatName("aaa")
 
   val cnt = new AtomicInteger(0)
 
