@@ -23,11 +23,11 @@ final class AdminApi(appConf: AppConfig, chatRegion: ActorRef[ChatCmd])(using sy
   given to: org.apache.pekko.util.Timeout = org.apache.pekko.util.Timeout(3.seconds)
   given resolver: ActorRefResolver = ActorRefResolver(system)
 
-  def addUser(req: AddUserReq): Future[ChatReply] =
+  def addUser(req: UserReq): Future[ChatReply] =
     chatRegion.ask[ChatReply](r => AddUser(req.chat, req.user, ReplyTo[ChatReply].toCustom(r)))
 
-  def addChat(req: CreateChatReq): Future[ChatReply] =
+  def addChat(req: ChatReq): Future[ChatReply] =
     chatRegion.ask[ChatReply](r => Create(req.chat, ReplyTo[ChatReply].toCustom(r)))
 
-  def rmUser(in: RmUserReq): Future[ChatReply] = ???
+  def rmUser(in: UserReq): Future[ChatReply] = ???
 }

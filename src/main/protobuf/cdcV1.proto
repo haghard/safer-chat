@@ -29,6 +29,7 @@ message ParticipantAdded {
 
   //a comma separated list of users: a,b,c
   string participants = 1 [(scalapb.field).no_box = true];
+  //repeated string participants = 1 [(scalapb.field).collection_type = "scala.collection.mutable.Set"];
   string chat = 2 [(scalapb.field).type = "shared.Domain.ChatName"];
   string replyTo = 3 [(scalapb.field).type = "shared.Domain.ReplyTo"];
 }

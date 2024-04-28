@@ -4,7 +4,8 @@
 
 package org.apache.pekko.cassandra
 
-import com.datastax.oss.driver.api.core.CqlSession
+import com.datastax.oss.driver.api.core.config.DefaultDriverOption
+import com.datastax.oss.driver.api.core.{ CqlIdentifier, CqlSession }
 import com.datastax.oss.driver.api.core.cql.*
 import com.datastax.oss.driver.api.core.uuid.Uuids
 import com.domain.chat.*
@@ -35,6 +36,24 @@ import shared.Domain.{ ChatName, ReplyTo }
 
 import scala.util.control.NonFatal
 
+/*
+
+
+def run() =
+  MergeHub
+    .source[(AddItem, Promise[AddItem])](perProducerBufferSize = 1)
+    .via(
+      CassandraFlow.withContext[AddItem, Promise[AddItem]](
+        writeSettings = CassandraWriteSettings.defaults.withParallelism(4),
+        cqlStatement = openStmt,
+        statementBinder = openBinder
+      )
+    )
+    .to(Sink.foreach { case (cmd, p) => p.trySuccess(cmd) })
+    .run()
+
+  val sink = run()
+ */
 object CassandraStore {
 
   def createTables(cqlSession: CqlSession, log: Logger): Unit =
@@ -179,7 +198,7 @@ object CassandraStore {
         .asScala
         .map { _ =>
           // logger.info(s"Posted: [$contentHash/$revision]")
-          logger.info(s"Posted: [$chatName: ${cdc.userInfo.user.raw()}/$revision]")
+          logger.info(s"Posted: [$chatName.$revision: ${cdc.userInfo.user.raw()} ...]")
           ReplyTo[ServerCmd]
             .toBase(cdc.replyTo)
             .tell(ServerCmd(cdc.chat, cdc.content, cdc.userInfo))
@@ -187,7 +206,7 @@ object CassandraStore {
         }
         .recover {
           case NonFatal(ex) =>
-            logger.error(s"Failed [$chatName: ${cdc.userInfo.user.raw()}/$revision]")
+            logger.error(s"Failed [$chatName.$revision: ${cdc.userInfo.user.raw()} ...]")
 
             ReplyTo[ServerCmd]
               .toBase(cdc.replyTo)
@@ -210,6 +229,7 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
     new DurableStateUpdateStore[Chat.State]() {
       import system.dispatcher
 
+      val profileName = "local" //
       val writeParallelism = system.settings.config.getInt("cassandra.parallelism")
       val bufferSize = system.settings.config.getInt("cassandra.write-buffer-size")
 
@@ -222,37 +242,71 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
       val sharding = ClusterSharding(system.toTyped)
 
       // https://docs.datastax.com/en/developer/java-driver/4.17/manual/core/
+      // https://docs.datastax.com/en/developer/java-driver/4.17/manual/core/pooling/
+      // https://docs.datastax.com/en/developer/java-driver/4.17/manual/core/configuration/
+
       // https://github.com/kbr-/scylla-example-app/blob/main/src/main/java/app/Main.java
-      val cqlSession: CqlSession = CqlSession.builder().build()
+      val cqlSession: CqlSession = CqlSession.builder().withKeyspace(CqlIdentifier.fromCql("chat")).build()
+
+      val config = cqlSession.getContext().getConfig()
+      val profile = config.getProfile(profileName) /*.entrySet()*/
+      val confLine =
+        s"""
+          |===============================================================
+          |REQUEST_TIMEOUT:${profile.getDuration(DefaultDriverOption.REQUEST_TIMEOUT)}
+          |CONNECTION_MAX_REQUESTS:${profile.getInt(DefaultDriverOption.CONNECTION_MAX_REQUESTS)}
+          |REQUEST_CONSISTENCY:${profile.getString(DefaultDriverOption.REQUEST_CONSISTENCY)}
+          |===============================================================
+          |""".stripMargin
+
+      println(confLine)
 
       // schema
       cqlSession.execute(CassandraStore.createKeyspace)
       cqlSession.execute(CassandraStore.chatDetailsTable)
       cqlSession.execute(CassandraStore.chatTimelineTable)
 
-      val getTimeLimeVersion =
-        cqlSession.prepare("SELECT revision FROM chat.timeline WHERE chat=? AND partition=? LIMIT 1")
-
-      val getDetailsVersion =
-        cqlSession.prepare("SELECT participants, revision, partition FROM chat.chat_details WHERE chat=?")
-
       val partitionSize = system.settings.config.getInt("cassandra.partition-size")
 
-      val writePS =
-        cqlSession.prepare("INSERT INTO chat.timeline(chat, partition, revision, when, message) VALUES (?,?,?,?,?)")
+      val getTimeLimeVersion = {
+        val s = SimpleStatement
+          .builder("SELECT revision FROM timeline WHERE chat=? AND partition=? LIMIT 1")
+          .setExecutionProfileName(profileName)
+          .build()
+        cqlSession.prepare(s)
+      }
 
+      val getDetailsVersion = {
+        val s = SimpleStatement
+          .builder("SELECT participants, revision, partition FROM chat_details WHERE chat=?")
+          .setExecutionProfileName(profileName)
+          .build()
+        cqlSession.prepare(s)
+      }
+
+      val writePS = {
+        val s = SimpleStatement
+          .builder(
+            "INSERT INTO chat.timeline(chat, partition, revision, when, message) VALUES (?,?,?,?,?)"
+          )
+          .setExecutionProfileName(profileName)
+          .build()
+        cqlSession.prepare(s)
+      }
+
+      // Atomic batch is req but it's not that.
       val writeBatchPS =
         cqlSession.prepare(
           """
             | BEGIN BATCH
-            |  UPDATE chat.chat_details SET partition = ? WHERE chat = ?
-            |  INSERT INTO chat.timeline(chat, partition, revision, when, message) VALUES (?,?,?,?,?)
+            |  UPDATE chat_details SET partition = ? WHERE chat = ?
+            |  INSERT INTO timeline(chat, partition, revision, when, message) VALUES (?,?,?,?,?)
             | APPLY BATCH;
             |""".stripMargin
         )
 
       val writeDetails =
-        cqlSession.prepare("INSERT INTO chat.chat_details(chat, revision, participants, partition) VALUES (?, ?, ?, ?)")
+        cqlSession.prepare("INSERT INTO chat_details(chat, revision, participants, partition) VALUES (?, ?, ?, ?)")
 
       //
       val (buffer, src) = Source.queue[StreamElement](bufferSize).preMaterialize()
@@ -317,7 +371,7 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
             Future.successful {
               sharding
                 .entityRefFor(UserTwin.TypeKey, UserTwin.key(chatName, info.user))
-                .tell(com.domain.user.ConnectUsr(chatName, info.user, info.otp))
+                .tell(com.domain.user.UsrTwinCmd(chatName, info.user, info.otp, com.domain.user.UsrStatus.CONNECTED))
               org.apache.pekko.Done
             }
 
@@ -325,7 +379,7 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
             Future.successful {
               sharding
                 .entityRefFor(UserTwin.TypeKey, UserTwin.key(chatName, info.user))
-                .tell(com.domain.user.DisconnectUsr(chatName, info.user, info.otp))
+                .tell(com.domain.user.UsrTwinCmd(chatName, info.user, info.otp, com.domain.user.UsrStatus.DISCONNECTED))
 
               if (state.onlineParticipants.isEmpty)
                 sharding.entityRefFor(Chat.TypeKey, chatName.raw()).tell(StopChatEntity(chatName))

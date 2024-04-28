@@ -25,6 +25,9 @@ import server.grpc.chat.*
 import org.apache.pekko.actor.typed.scaladsl.adapter.TypedSchedulerOps
 import org.slf4j.Logger
 import org.apache.pekko.actor.Scheduler
+import com.domain.user.UsrTwinCmd
+
+import java.nio.ByteBuffer
 
 object Chat {
 
@@ -34,13 +37,35 @@ object Chat {
 
   final case class ChatRoomHub(sink: Sink[ClientCmd, NotUsed], src: Source[ServerCmd, NotUsed])
 
+  def hexId2Long(hexId: String): Long =
+    java.lang.Long.parseUnsignedLong(hexId, 16)
+
+  def hashCmd(line: String): Long = {
+    val bts = ByteBuffer.wrap(line.getBytes(StandardCharsets.UTF_8))
+    org.apache.pekko.cassandra.CassandraHash.hash(bts, 0, bts.array.length)
+  }
+
+  def shardingMessageExtractor2(numOfShards: Int) =
+    new cluster.sharding.typed.ShardingMessageExtractor[ChatCmd, ChatCmd] {
+      override def entityId(cmd: ChatCmd): String =
+        hashCmd(cmd.chat.raw()).toHexString
+
+      override def shardId(entityId: String): String =
+        entityId
+        // math.abs(hexId2Long(entityId) % numOfShards).toString
+
+      override def unwrapMessage(cmd: ChatCmd): ChatCmd = cmd
+    }
+
   def shardingMessageExtractor(numOfShards: Int) =
     new cluster.sharding.typed.ShardingMessageExtractor[ChatCmd, ChatCmd] {
       override def entityId(cmd: ChatCmd): String =
         cmd.chat.raw()
 
       override def shardId(entityId: String): String =
-        math.abs(entityId.hashCode % numOfShards).toString
+        // one entity per chat|shard to isolate rebalancing. We want to rebalance one chat|shard at a time
+        entityId
+      // math.abs(entityId.hashCode % numOfShards).toString
 
       override def unwrapMessage(cmd: ChatCmd): ChatCmd = cmd
     }
@@ -260,19 +285,19 @@ object Chat {
           .persist(state.withMsgPosted(chat, content, userInfo, replyTo))
           .thenNoReply()
 
-      case StopChatEntity(chat) =>
+      case StopChatEntity(chatName) =>
         Effect
           .none[ChatState]
           .thenRun { _ =>
-            logger.info("Passivate: {} ★ ★ ★", chat)
+            logger.info("Passivate: {} ★ ★ ★", chatName)
 
             state.onlineParticipants.foreach { ps =>
               sharding
-                .entityRefFor(UserTwin.TypeKey, UserTwin.key(chat, ps))
-                .!(com.domain.user.DisconnectUsr(chat, ps))
+                .entityRefFor(UserTwin.TypeKey, UserTwin.key(chatName, ps))
+                .!(UsrTwinCmd(chat = chatName, user = ps, status = com.domain.user.UsrStatus.DISCONNECTED))
             }
             state.maybeActiveHub.foreach { _ =>
-              Option(kss.remove(chat)).foreach(_.shutdown())
+              Option(kss.remove(chatName)).foreach(_.shutdown())
             }
           }
           .thenStop()

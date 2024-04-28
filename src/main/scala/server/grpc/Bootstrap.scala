@@ -35,7 +35,7 @@ object Bootstrap {
     val cps = system
       .settings
       .config
-      .getStringList("datastax-java-driver.basic.contact-points")
+      .getStringList("datastax-java-driver.profiles.local.basic.contact-points")
       .asScala
 
     try CassandraStore.createTables(CqlSession.builder().build(), system.log)

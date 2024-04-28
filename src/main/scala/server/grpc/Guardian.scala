@@ -26,6 +26,9 @@ import org.apache.pekko.stream.*
 import shared.AppConfig
 import shared.Domain.ChatName
 
+import java.time.LocalDateTime
+import java.util.TimeZone
+
 object Guardian {
 
   enum Protocol {
@@ -71,11 +74,14 @@ object Guardian {
                 .log
                 .info(
                   s"""
-                     |------------- Started: ${cluster.selfMember.details()}  ------------------ 👍✅🚀
-                     |Singleton: [${singleton.details2()}]/Leader:[${cluster.state.leader.getOrElse("")}] 👍✅🚀
-                     |Members:[${membersByAge.map(_.details()).mkString(", ")}] 👍✅🚀
+                     |------------- Started: ${cluster.selfMember.details()}  ------------------
+                     |Singleton: [${singleton.details2()}]/Leader:[${cluster.state.leader.getOrElse("")}]
+                     |Members:[${membersByAge.map(_.details()).mkString(", ")}]
                      |${server.grpc.BuildInfo.toString}
-                     |PID:${ProcessHandle.current().pid()} JVM: $jvmInfo 👍✅🚀
+                     |Environment: [TZ:${TimeZone.getDefault.getID}. Start time:${LocalDateTime.now()}]
+                     |PID:${ProcessHandle.current().pid()} JVM: $jvmInfo
+                     |👍✅🚀
+                     |---------------------------------------------------------------------------------
                      |""".stripMargin
                 )
             }

@@ -2,6 +2,7 @@
 // This software is licensed under the Apache License, Version 2.0.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0.
 
+/*
 package server.grpc.serialization
 
 import server.grpc.chat.*
@@ -20,22 +21,28 @@ final class DomainSerializer(val system: ExtendedActorSystem) extends Serializer
 
   override def toBinary(obj: AnyRef): Array[Byte] =
     obj match {
+      case pb: scalapb.GeneratedMessage =>
+        pb.toByteArray
+      case _ =>
+        throw new IllegalArgumentException(s"Unable to serialize to bytes, class was: ${obj.getClass}!")
+    }
+
+    /*obj match {
       case c: ChatCmd                       => c.toByteArray
       case r: ChatReply                     => r.toByteArray
       case cc: ClientCmd                    => cc.toByteArray
       case sc: ServerCmd                    => sc.toByteArray
       case utc: com.domain.user.UserTwinCmd => utc.toByteArray
-
       case _ =>
         throw new IllegalArgumentException(s"Unable to serialize to bytes, class was: ${obj.getClass}!")
-    }
+    }*/
 
   override def fromBinary(bytes: Array[Byte], manifest: String): AnyRef =
-    if (manifest == classOf[com.domain.chat.ConnectRequest].getName)
+    if (manifest == classOf[com.domain.chat.ConnectRequest].getName())
       com.domain.chat.ConnectRequest.parseFrom(bytes)
-    else if (manifest == classOf[com.domain.chat.AuthUser].getName)
+    else if (manifest == classOf[com.domain.chat.AuthUser].getName())
       com.domain.chat.AuthUser.parseFrom(bytes)
-    else if (manifest == classOf[com.domain.chat.PostMessage].getName)
+    else if (manifest == classOf[com.domain.chat.PostMessage].getName())
       com.domain.chat.PostMessage.parseFrom(bytes)
     else if (manifest == classOf[com.domain.chat.Create].getName) com.domain.chat.Create.parseFrom(bytes)
     else if (manifest == classOf[com.domain.chat.AddUser].getName) com.domain.chat.AddUser.parseFrom(bytes)
@@ -48,7 +55,7 @@ final class DomainSerializer(val system: ExtendedActorSystem) extends Serializer
     else if (manifest == classOf[ClientCmd].getName) ClientCmd.parseFrom(bytes)
     else if (manifest == classOf[ServerCmd].getName) ServerCmd.parseFrom(bytes)
     /*
-     */
+ */
     else if (manifest == classOf[com.domain.user.ConnectUsr].getName) com.domain.user.ConnectUsr.parseFrom(bytes)
     else if (manifest == classOf[com.domain.user.DisconnectUsr].getName) com.domain.user.DisconnectUsr.parseFrom(bytes)
     else
@@ -57,3 +64,4 @@ final class DomainSerializer(val system: ExtendedActorSystem) extends Serializer
       )
 
 }
+ */
