@@ -5,16 +5,15 @@
 package org.apache.pekko.cassandra
 
 import com.datastax.oss.driver.api.core.config.DefaultDriverOption
-import com.datastax.oss.driver.api.core.{ CqlIdentifier, CqlSession }
+import com.datastax.oss.driver.api.core.CqlSession
 import com.datastax.oss.driver.api.core.cql.*
-import com.datastax.oss.driver.api.core.uuid.Uuids
+import com.datastax.oss.driver.api.core.uuid.Uuids.unixTimestamp
 import com.domain.chat.*
 import org.apache.pekko.*
 import org.apache.pekko.actor.typed.scaladsl.adapter.*
 import org.apache.pekko.actor.typed.{ ActorRefResolver, ActorSystem }
-import org.apache.pekko.actor.ExtendedActorSystem
+import org.apache.pekko.actor.{ ExtendedActorSystem, Scheduler }
 import org.apache.pekko.cassandra.CassandraStore.*
-import org.apache.pekko.cluster.sharding.typed.scaladsl.ClusterSharding
 import org.apache.pekko.persistence.state.DurableStateStoreProvider
 import org.apache.pekko.persistence.state.scaladsl.*
 import org.apache.pekko.stream.*
@@ -23,38 +22,33 @@ import com.domain.chat.cdc.v1.CdcEnvelope
 import com.domain.chat.cdc.v1.CdcEnvelope.*
 import server.grpc.chat.ServerCmd
 import server.grpc.state.ChatState
-import server.grpc.{ Chat, UserTwin }
+import server.grpc.Chat
 
 import scala.collection.immutable.HashSet
 import scala.concurrent.*
-import com.datastax.oss.driver.api.core.uuid.Uuids.*
 import org.apache.pekko.event.LoggingAdapter
 import org.apache.pekko.stream.scaladsl.*
 import org.apache.pekko.util.FutureConverters.*
 import org.slf4j.Logger
 import shared.Domain.{ ChatName, ReplyTo }
 
+import java.time.{ Instant, ZoneId, ZonedDateTime }
+import java.time.format.DateTimeFormatter
+import java.util
+import java.util.UUID
+import scala.collection.mutable
+import scala.util.{ Failure, Success }
 import scala.util.control.NonFatal
+import scala.concurrent.duration.*
 
-/*
-
-
-def run() =
-  MergeHub
-    .source[(AddItem, Promise[AddItem])](perProducerBufferSize = 1)
-    .via(
-      CassandraFlow.withContext[AddItem, Promise[AddItem]](
-        writeSettings = CassandraWriteSettings.defaults.withParallelism(4),
-        cqlStatement = openStmt,
-        statementBinder = openBinder
-      )
-    )
-    .to(Sink.foreach { case (cmd, p) => p.trySuccess(cmd) })
-    .run()
-
-  val sink = run()
- */
 object CassandraStore {
+
+  val profileName = "local"
+
+  val formatterMM = DateTimeFormatter.ofPattern("yyyy-MM")
+  val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss:SSSSSS Z")
+  val UTC = ZoneId.of(java.util.TimeZone.getTimeZone("UTC").getID)
+  val DEFAULT = ZoneId.of(java.util.TimeZone.getDefault().getID())
 
   def createTables(cqlSession: CqlSession, log: Logger): Unit =
     try {
@@ -65,6 +59,16 @@ object CassandraStore {
       })
        */
 
+      val config = cqlSession.getContext().getConfig()
+      val profile = config.getProfile(profileName)
+      val profileConf =
+        s"""
+           |REQUEST_TIMEOUT:${profile.getDuration(DefaultDriverOption.REQUEST_TIMEOUT)}
+           |CONNECTION_MAX_REQUESTS:${profile.getInt(DefaultDriverOption.CONNECTION_MAX_REQUESTS)}
+           |REQUEST_CONSISTENCY:${profile.getString(DefaultDriverOption.REQUEST_CONSISTENCY)}
+           |""".stripMargin
+
+      // https://github.com/apache/cassandra-java-driver/blob/4.x/examples/src/main/java/com/datastax/oss/driver/examples/basic/ReadTopologyAndSchemaMetadata.java
       log.info("★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★  CASSANDRA: Token ranges ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★")
       val metadata = cqlSession.getMetadata()
       val nodes = metadata.getNodes()
@@ -76,52 +80,214 @@ object CassandraStore {
           }*/
         }
       }
+      log.info(profileConf)
       log.info("★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★")
 
       log.info(CassandraStore.chatDetailsTable)
       log.info(CassandraStore.chatTimelineTable)
 
-      cqlSession.execute(CassandraStore.createKeyspace)
       cqlSession.execute(CassandraStore.chatDetailsTable)
       cqlSession.execute(CassandraStore.chatTimelineTable)
     } catch {
       case NonFatal(ex) =>
         log.error(s"Table creation error", ex)
-    } finally cqlSession.close()
+        cqlSession.close()
+    }
 
-  val createKeyspace =
-    "CREATE KEYSPACE IF NOT EXISTS chat WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 3 };"
+  def readRecentHistory(
+      cmd: ServerCmd,
+      getRecent: PreparedStatement,
+      limit: Int = 15,
+    )(using
+      cqlSession: CqlSession,
+      logger: Logger,
+    ): Future[Seq[ServerCmd]] = {
+    val chat = cmd.chat.raw()
+    val ts = cmd.timeUuid.toUnixTs()
+    val bucket = formatterMM.format(ZonedDateTime.ofInstant(Instant.ofEpochMilli(ts), UTC))
+    cqlSession
+      .executeAsync(getRecent.bind(chat, bucket, limit).setPageSize(limit))
+      .asScala
+      .map { asyncResultSet =>
+        var buffer = List.empty[ServerCmd]
+        val sb = new StringBuilder()
+        val iter = asyncResultSet.currentPage().iterator()
+        while (iter.hasNext) {
+          val row = iter.next()
+          val timeuud = row.getUuid(1)
+          val ts = unixTimestamp(timeuud)
+          val cmd = ServerCmd.parseFrom(row.getByteBuffer(2).array())
+          buffer = cmd :: buffer
+          sb.append(
+            s"$timeuud / $ts / ${cmd.userInfo.user.raw()} / ${formatter
+                .format(ZonedDateTime.ofInstant(Instant.ofEpochMilli(ts), DEFAULT))}"
+          ).append("\n")
+        }
+        logger.info(s"""
+             |Last ${buffer.length}
+             |$chat / $bucket
+             |${sb.toString()}
+             |""".stripMargin)
+        buffer
+      }(ExecutionContext.parasitic)
+  }
+
+  def writeSingleMsg(
+      cmd: ServerCmd
+    )(using
+      cqlSession: CqlSession,
+      ps: PreparedStatement,
+      logger: LoggingAdapter,
+    ): Future[?] = {
+    val chatName = cmd.chat.raw()
+    val tbu: UUID = cmd.timeUuid.toUUID()
+    val bts = cmd.toByteArray
+    val ts = cmd.timeUuid.toUnixTs()
+    val bucket = formatterMM.format(ZonedDateTime.ofInstant(Instant.ofEpochMilli(ts), UTC))
+    cqlSession
+      .executeAsync(
+        ps.bind(
+          chatName,
+          bucket,
+          java.nio.ByteBuffer.wrap(bts),
+          tbu,
+        )
+      )
+      .asScala
+      .transform { res =>
+        res match {
+          case Success(value) =>
+            logger.info(s"${Thread.currentThread().getName}: $chatName.$ts.")
+            res
+          case Failure(ex) =>
+            logger.error(s"Write error $chatName: $ts. Error:${ex.getMessage()}")
+            res
+        }
+      }(ExecutionContext.parasitic)
+  }
+
+  def writeBatch(
+      cmds: mutable.SortedSet[ServerCmd]
+    )(using
+      cqlSession: CqlSession,
+      ps: PreparedStatement,
+      logger: LoggingAdapter,
+    ): Future[?] = {
+
+    val chatName = cmds.head.chat.raw()
+    val revisions = cmds.map(_.timeUuid.toUnixTs()).mkString(",")
+    val timeBucket =
+      formatterMM.format(ZonedDateTime.ofInstant(Instant.ofEpochMilli(cmds.head.timeUuid.toUnixTs()), UTC))
+
+    var batchStmts = BatchStatement.newInstance(com.datastax.oss.driver.api.core.cql.DefaultBatchType.UNLOGGED)
+    cmds.foreach { cmd =>
+      val tbu = cmd.timeUuid.toUUID()
+      batchStmts = batchStmts.add(
+        ps.bind(
+          chatName,
+          timeBucket,
+          java.nio.ByteBuffer.wrap(cmd.toByteArray),
+          tbu,
+        )
+      )
+    }
+
+    cqlSession
+      .executeAsync(batchStmts)
+      .asScala
+      .transform { res =>
+        res match {
+          case Success(ar) =>
+            logger.info(s"${Thread.currentThread().getName}: Written batch: $chatName: [$revisions].")
+            res
+          case Failure(ex) =>
+            // UnavailableException, WriteTimeoutException, NoNodeAvailableException
+            logger.error(s"WriteBatch error: $chatName: [$revisions]. Error:${ex.getMessage()}")
+            res
+        }
+      }(ExecutionContext.parasitic)
+
+  }
+
+  def mkSink(using system: ActorSystem[?]): (Sink[ServerCmd, NotUsed], KillSwitch) = {
+    // given logger: Logger = system.log
+    given logger: LoggingAdapter = system.toClassic.log
+
+    given sch: Scheduler = system.scheduler.toClassic
+
+    given ec: ExecutionContext = system.executionContext
+
+    given cqlSession: CqlSession = CassandraSessionExtension(system.toClassic).cqlSession
+
+    given ps: PreparedStatement = cqlSession.prepare(
+      SimpleStatement
+        .builder("INSERT INTO chat.timeline(chat, time_bucket, message, when) VALUES (?,?,?,?)")
+        .setExecutionProfileName(profileName)
+        .build()
+    )
+
+    given ord: scala.math.Ordering[ServerCmd] with {
+      def compare(x: ServerCmd, y: ServerCmd): Int =
+        x.timeUuid.toUnixTs().compareTo(y.timeUuid.toUnixTs())
+    }
+
+    val writeParallelism = system.settings.config.getInt("cassandra.parallelism")
+    val maxBatchSize = system.settings.config.getInt("cassandra.max-batch-size") // 8
+
+    MergeHub
+      .source[ServerCmd](perProducerBufferSize = 1)
+      .log("cassandra-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}")(system.toClassic.log)
+      .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
+      .viaMat(KillSwitches.single)(Keep.both)
+      .groupedWithin(maxBatchSize, 150.millis)
+      .to(
+        Sink.foreachAsync(1) { (batch: Seq[ServerCmd]) =>
+          Future
+            .traverse(batch.groupBy(_.chat.raw()).values) { batchPerChat =>
+              // TODO: Check it out https://github.com/apache/cassandra-java-driver/blob/1492d6ced9d54bdd68deb043a0bfe232eaa2a8fc/examples/src/main/java/com/datastax/oss/driver/examples/retry/DowngradingRetry.java#L154C9-L154C45
+              val writeFn =
+                batchPerChat.size match {
+                  case 1 =>
+                    () => writeSingleMsg(batchPerChat.head)
+                  case n =>
+                    () => writeBatch(mutable.SortedSet.from(batchPerChat))
+
+                }
+              pattern.retry(writeFn, Int.MaxValue, 3.seconds)
+            }
+            .map(_ => ())(ExecutionContext.parasitic)
+        }
+      )
+      .run()
+  }
 
   val chatDetailsTable =
     """
-      |CREATE TABLE IF NOT EXISTS chat.chat_details (
+      |CREATE TABLE IF NOT EXISTS chat_details (
       |   chat text,
       |   revision bigint,
       |   participants text,
-      |   partition bigint,
       |   PRIMARY KEY (chat)
       |);
       |""".stripMargin
 
   val chatTimelineTable =
     """
-      |CREATE TABLE IF NOT EXISTS chat.timeline (
+      |CREATE TABLE IF NOT EXISTS timeline (
       |   chat text,
-      |   partition bigint,
-      |   revision bigint,
+      |   time_bucket varchar,
       |   message blob,
       |   when timeuuid,
-      |   PRIMARY KEY ((chat, partition), revision)) WITH CLUSTERING ORDER BY (revision DESC);
+      |   PRIMARY KEY ((chat, time_bucket), when)) WITH CLUSTERING ORDER BY (when DESC);
       |""".stripMargin
 
   type StreamElement = (Long, CdcEnvelope.Payload)
 
-  def writeDetails(
+  def updateChatDetails(
       session: CqlSession,
       revision: Long,
       createOrAdd: ChatCreated | ParticipantAdded,
       ps: PreparedStatement,
-      partitionSize: Long,
     )(using
       ec: ExecutionContext,
       resolver: ActorRefResolver,
@@ -129,7 +295,7 @@ object CassandraStore {
     createOrAdd match {
       case cdc: ChatCreated =>
         session
-          .executeAsync(ps.bind(cdc.chat.raw(), Long.box(revision), "", Long.box(revision) / partitionSize))
+          .executeAsync(ps.bind(cdc.chat.raw(), Long.box(revision), ""))
           .asScala
           .map { _ =>
             ReplyTo[ChatReply].toBase(cdc.replyTo).tell(ChatReply(cdc.chat))
@@ -138,7 +304,7 @@ object CassandraStore {
       case cdc: ParticipantAdded =>
         session
           .executeAsync(
-            ps.bind(cdc.chat.raw(), Long.box(revision), cdc.participants, Long.box(revision) / partitionSize)
+            ps.bind(cdc.chat.raw(), Long.box(revision), cdc.participants)
           )
           .asScala
           .map { _ =>
@@ -146,189 +312,60 @@ object CassandraStore {
             Done
           }
     }
-
-  def postMsg(
-      session: CqlSession,
-      revision: Long,
-      cdc: MsgPosted,
-      ps: PreparedStatement,
-      psBatch: PreparedStatement,
-      partitionSize: Long,
-    )(using
-      ec: ExecutionContext,
-      resolver: ActorRefResolver,
-      logger: LoggingAdapter,
-    ): Future[Done] = {
-
-    val chatName = cdc.chat.raw()
-    val i: Long = revision % partitionSize
-    val prNum: Long = Long.box(revision) / partitionSize
-
-    /*
-    import shared.*
-    val contentBts = cdc.content.values.foldLeft(com.google.protobuf.ByteString.empty())(_.concat(_)).toByteArray
-    val contentHash = base64Encode(sha3_256(contentBts))
-     */
-
-    val f: Future[Done] =
-      (if (i >= 0 && i <= 7) {
-         session.executeAsync(
-           psBatch.bind(
-             prNum,
-             chatName,
-             chatName,
-             prNum,
-             Long.box(revision),
-             Uuids.timeBased(),
-             java.nio.ByteBuffer.wrap(cdc.toByteArray),
-           )
-         )
-       } else {
-         session
-           .executeAsync(
-             ps.bind(
-               chatName,
-               prNum,
-               Long.box(revision),
-               Uuids.timeBased(),
-               java.nio.ByteBuffer.wrap(cdc.toByteArray),
-             )
-           )
-       })
-        .asScala
-        .map { _ =>
-          // logger.info(s"Posted: [$contentHash/$revision]")
-          logger.info(s"Posted: [$chatName.$revision: ${cdc.userInfo.user.raw()} ...]")
-          ReplyTo[ServerCmd]
-            .toBase(cdc.replyTo)
-            .tell(ServerCmd(cdc.chat, cdc.content, cdc.userInfo))
-          Done
-        }
-        .recover {
-          case NonFatal(ex) =>
-            logger.error(s"Failed [$chatName.$revision: ${cdc.userInfo.user.raw()} ...]")
-
-            ReplyTo[ServerCmd]
-              .toBase(cdc.replyTo)
-              .tell(ServerCmd.defaultInstance)
-
-            // logger.error(s"Failed [$contentHash/$revision]")
-            // logger.error(ex, s"Failed [$msgHash/$revision]")
-            // ignore errors here because we know the same message will be resent with higher revisions
-            // that's why gaps in revision are possible
-            Done
-        }
-
-    f
-  }
 }
 
 final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStoreProvider {
 
+  import system.dispatcher
+
   override def scaladslDurableStateStore(): DurableStateStore[Any] =
     new DurableStateUpdateStore[Chat.State]() {
-      import system.dispatcher
-
-      val profileName = "local" //
       val writeParallelism = system.settings.config.getInt("cassandra.parallelism")
-      val bufferSize = system.settings.config.getInt("cassandra.write-buffer-size")
 
       given logger: LoggingAdapter = system.log
+
       given refResolver: ActorRefResolver = ActorRefResolver(system.toTyped)
+
       given mat: Materializer = Materializer.matFromSystem(system)
+
       given scheduler: org.apache.pekko.actor.Scheduler = system.scheduler
+
       given typedSystem: ActorSystem[?] = system.toTyped
 
-      val sharding = ClusterSharding(system.toTyped)
+      val cqlSession: CqlSession = CassandraSessionExtension(system).cqlSession
 
-      // https://docs.datastax.com/en/developer/java-driver/4.17/manual/core/
-      // https://docs.datastax.com/en/developer/java-driver/4.17/manual/core/pooling/
-      // https://docs.datastax.com/en/developer/java-driver/4.17/manual/core/configuration/
-
-      // https://github.com/kbr-/scylla-example-app/blob/main/src/main/java/app/Main.java
-      val cqlSession: CqlSession = CqlSession.builder().withKeyspace(CqlIdentifier.fromCql("chat")).build()
-
-      val config = cqlSession.getContext().getConfig()
-      val profile = config.getProfile(profileName) /*.entrySet()*/
-      val confLine =
-        s"""
-          |===============================================================
-          |REQUEST_TIMEOUT:${profile.getDuration(DefaultDriverOption.REQUEST_TIMEOUT)}
-          |CONNECTION_MAX_REQUESTS:${profile.getInt(DefaultDriverOption.CONNECTION_MAX_REQUESTS)}
-          |REQUEST_CONSISTENCY:${profile.getString(DefaultDriverOption.REQUEST_CONSISTENCY)}
-          |===============================================================
-          |""".stripMargin
-
-      println(confLine)
-
-      // schema
-      cqlSession.execute(CassandraStore.createKeyspace)
       cqlSession.execute(CassandraStore.chatDetailsTable)
       cqlSession.execute(CassandraStore.chatTimelineTable)
 
-      val partitionSize = system.settings.config.getInt("cassandra.partition-size")
-
       val getTimeLimeVersion = {
         val s = SimpleStatement
-          .builder("SELECT revision FROM timeline WHERE chat=? AND partition=? LIMIT 1")
+          .builder("SELECT chat, when, message FROM timeline WHERE chat=? AND time_bucket=? LIMIT ?")
           .setExecutionProfileName(profileName)
           .build()
         cqlSession.prepare(s)
       }
 
-      val getDetailsVersion = {
+      val getDetailsRevision = {
         val s = SimpleStatement
-          .builder("SELECT participants, revision, partition FROM chat_details WHERE chat=?")
+          .builder("SELECT participants, revision FROM chat_details WHERE chat=?")
           .setExecutionProfileName(profileName)
           .build()
         cqlSession.prepare(s)
       }
-
-      val writePS = {
-        val s = SimpleStatement
-          .builder(
-            "INSERT INTO chat.timeline(chat, partition, revision, when, message) VALUES (?,?,?,?,?)"
-          )
-          .setExecutionProfileName(profileName)
-          .build()
-        cqlSession.prepare(s)
-      }
-
-      // Atomic batch is req but it's not that.
-      val writeBatchPS =
-        cqlSession.prepare(
-          """
-            | BEGIN BATCH
-            |  UPDATE chat_details SET partition = ? WHERE chat = ?
-            |  INSERT INTO timeline(chat, partition, revision, when, message) VALUES (?,?,?,?,?)
-            | APPLY BATCH;
-            |""".stripMargin
-        )
 
       val writeDetails =
-        cqlSession.prepare("INSERT INTO chat_details(chat, revision, participants, partition) VALUES (?, ?, ?, ?)")
+        cqlSession.prepare("INSERT INTO chat_details(chat, revision, participants) VALUES (?, ?, ?)")
 
       //
-      val (buffer, src) = Source.queue[StreamElement](bufferSize).preMaterialize()
-
+      val (buffer, src) = Source.queue[StreamElement](256).preMaterialize()
       src
         .mapAsync(writeParallelism) {
-          // state: Chat.State,
           case (revision: Long, cdc: CdcEnvelope.Payload) =>
             cdc match {
               case Payload.Created(created) =>
-                CassandraStore.writeDetails(cqlSession, revision, created, writeDetails, partitionSize)
+                CassandraStore.updateChatDetails(cqlSession, revision, created, writeDetails)
               case Payload.Added(added) =>
-                CassandraStore.writeDetails(cqlSession, revision, added, writeDetails, partitionSize)
-              case Payload.Posted(msgPosted) =>
-                CassandraStore.postMsg(
-                  cqlSession,
-                  revision,
-                  msgPosted,
-                  writePS,
-                  writeBatchPS,
-                  partitionSize,
-                )
+                CassandraStore.updateChatDetails(cqlSession, revision, added, writeDetails)
               case other =>
                 Future.failed(new Exception(s"Unsupported cmd $other"))
             }
@@ -336,7 +373,7 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
         .addAttributes(
           ActorAttributes.supervisionStrategy {
             case NonFatal(cause) =>
-              if (logger.isErrorEnabled) logger.error(cause, "CassandraStateStore failed and resumed")
+              if (logger.isErrorEnabled) logger.error(cause, "ChatDetailsStore failed and resumed")
               Supervision.Resume
           }
         )
@@ -346,18 +383,14 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
           state: Chat.State,
           chatName: ChatName,
           revision: Long,
-        ): Future[Done] = {
-
-        if (bufferSize - buffer.size() < 5)
-          logger.warning("CassandraStateStore.buffer({}) close to overflow", buffer.size())
-
+        ): Future[Done] =
         state.cdc.payload match {
-          case _ @(Payload.Created(_) | Payload.Added(_) | Payload.Posted(_)) =>
+          case _ @(Payload.Created(_) | Payload.Added(_)) =>
             buffer.offer((revision, state.cdc.payload)) match {
               case QueueOfferResult.Enqueued =>
                 Future.successful(Done)
               case QueueOfferResult.Dropped =>
-                logger.warning("CassandraStateStore overflow queue.size={}", buffer.size())
+                logger.warning("ChatDetailsStore overflow queue.size={}", buffer.size())
                 // Chat should resent all messages after timeout
                 Future.successful(Done)
               case QueueOfferResult.Failure(cause) =>
@@ -366,31 +399,9 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
               case result: QueueCompletionResult =>
                 Future.failed(new Exception("Unexpected"))
             }
-
-          case Payload.Cntd(info) =>
-            Future.successful {
-              sharding
-                .entityRefFor(UserTwin.TypeKey, UserTwin.key(chatName, info.user))
-                .tell(com.domain.user.UsrTwinCmd(chatName, info.user, info.otp, com.domain.user.UsrStatus.CONNECTED))
-              org.apache.pekko.Done
-            }
-
-          case Payload.DisCntd(info) =>
-            Future.successful {
-              sharding
-                .entityRefFor(UserTwin.TypeKey, UserTwin.key(chatName, info.user))
-                .tell(com.domain.user.UsrTwinCmd(chatName, info.user, info.otp, com.domain.user.UsrStatus.DISCONNECTED))
-
-              if (state.onlineParticipants.isEmpty)
-                sharding.entityRefFor(Chat.TypeKey, chatName.raw()).tell(StopChatEntity(chatName))
-
-              org.apache.pekko.Done
-            }
-
           case Payload.Empty =>
             Future.failed(new Exception("Empty"))
         }
-      }
 
       override def upsertObject(
           chatName: String,
@@ -402,33 +413,24 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
 
       override def getObject(chat: String): Future[GetObjectResult[Chat.State]] =
         cqlSession
-          .executeAsync(getDetailsVersion.bind(chat))
+          .executeAsync(getDetailsRevision.bind(chat))
           .asScala
-          .flatMap { rs =>
+          .map { rs =>
             Option(rs.one()) match {
               case Some(row) =>
                 val participants = row.getString(0)
                 val detailsRevision = row.getLong(1)
-                val partition = row.getLong(2)
-                cqlSession
-                  .executeAsync(getTimeLimeVersion.bind(chat, Long.box(partition)))
-                  .asScala
-                  .map { rs =>
-                    val timelineRevision = Option(rs.one()).map(_.getLong(0)).getOrElse(0L)
-                    GetObjectResult(
-                      Some(
-                        ChatState(
-                          name = Some(ChatName(chat)),
-                          registeredParticipants =
-                            HashSet.from(participants.split(",").map(shared.Domain.Participant(_))),
-                        )
-                      ),
-                      timelineRevision max detailsRevision,
+                GetObjectResult(
+                  Some(
+                    ChatState(
+                      name = Some(ChatName(chat)),
+                      registeredParticipants = HashSet.from(participants.split(",").map(shared.Domain.Participant(_))),
                     )
-                  }
-
+                  ),
+                  detailsRevision,
+                )
               case None =>
-                Future.successful(GetObjectResult(None, 0))
+                GetObjectResult(None, 0)
             }
           }
 
@@ -591,6 +593,4 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
         FlowShape(partitioner.in, merger.out)
       }
     )
-
-
  */

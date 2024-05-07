@@ -13,6 +13,7 @@ import org.apache.pekko.Done
 import org.apache.pekko.actor.CoordinatedShutdown
 import org.apache.pekko.actor.CoordinatedShutdown.*
 import org.apache.pekko.actor.typed.ActorSystem
+import org.apache.pekko.cassandra.CassandraSessionExtension
 import org.apache.pekko.http.scaladsl.*
 import org.apache.pekko.http.scaladsl.model.*
 import org.apache.pekko.stream.KillSwitch
@@ -58,7 +59,7 @@ object AppBootstrap {
 
           shutdown.addTask(PhaseBeforeServiceUnbind, "before-unbind") { () =>
             Future.successful {
-              logger.info(s"★ ★ ★ before-unbind [draining.${kss.values().size()} hubs]  ★ ★ ★")
+              logger.info(s"★ ★ ★ before-unbind [shutdown.${kss.values().size()} hubs]  ★ ★ ★")
               kss.forEach { (chat, ks) =>
                 ks.shutdown()
               }
@@ -82,7 +83,7 @@ object AppBootstrap {
             /** It doesn't accept new connection but it drains the existing connections Until the `terminationDeadline`
               * all the req that have been accepted will be completed and only than the shutdown will continue
               */
-            binding.terminate(phaseTimeout).map { _ =>
+            binding.terminate(phaseTimeout - 2.second).map { _ =>
               logger.info("★ ★ ★ CoordinatedShutdown [http-api.terminate]  ★ ★ ★")
               Done
             }
@@ -98,24 +99,48 @@ object AppBootstrap {
 
           // PhaseServiceRequestsDone - process in-flight requests
           shutdown.addTask(PhaseServiceRequestsDone, "kss.shutdown") { () =>
-            org
-              .apache
-              .pekko
-              .pattern
-              .after(5.seconds.min(phaseTimeout))(
-                Future {
-                  kss.values().forEach(_.abort(new Exception("abort")))
-                  logger.info(s"★ ★ ★ CoordinatedShutdown [kss.shutdown.${kss.size()} ]  ★ ★ ★")
-                  Done
-                }
+            Future {
+              kss.values().forEach(_.abort(new Exception("abort")))
+              logger.info(s"★ ★ ★ CoordinatedShutdown [kss.shutdown.${kss.size()} ]  ★ ★ ★")
+              Done
+            }
+          }
+
+          shutdown.addTask(PhaseBeforeClusterShutdown, "before-cluster-shutdown.0") { () =>
+            Http()
+              .shutdownAllConnectionPools()
+              .flatMap(_ =>
+                org
+                  .apache
+                  .pekko
+                  .pattern
+                  .after(2.seconds)(Future.successful {
+                    logger.info(s"★ ★ ★ CoordinatedShutdown [before-cluster-shutdown.0]  ★ ★ ★")
+                    Done
+                  })
               )
           }
 
-          shutdown.addTask(PhaseActorSystemTerminate, "system.term") { () =>
-            Future.successful {
-              logger.info("★ ★ ★ CoordinatedShutdown [close.connections] ★ ★ ★")
-              Done
-            }
+          shutdown.addTask(PhaseActorSystemTerminate, "actor-system-terminate.0") { () =>
+            Http()
+              .shutdownAllConnectionPools()
+              .flatMap(_ =>
+                org
+                  .apache
+                  .pekko
+                  .pattern
+                  .after(2.seconds)(
+                    scala
+                      .jdk
+                      .javaapi
+                      .FutureConverters
+                      .asScala(CassandraSessionExtension(sys).cqlSession.forceCloseAsync())
+                      .map { _ =>
+                        logger.info("★ ★ ★ CoordinatedShutdown [actor-system-terminate.0] ★ ★ ★")
+                        Done
+                      }
+                  )
+              )
           }
       }
   }

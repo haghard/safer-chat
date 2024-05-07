@@ -1,7 +1,7 @@
 // Copyright (c) 2024 by Vadim Bondarev
 // This software is licensed under the Apache License, Version 2.0.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0.
-
+/*
 package server.grpc
 
 import com.domain.user.*
@@ -20,7 +20,7 @@ object UserTwin {
     s"${chat.raw()}$Sep${usr.raw()}"
 
   // https://doc.akka.io/docs/akka/current/typed/cluster-sharding.html#colocate-shards
-  def shardingMessageExtractor(numOfShards: Int) =
+  def shardingMessageExtractor() =
     new org.apache.pekko.cluster.sharding.typed.ShardingMessageExtractor[UsrTwinCmd, UsrTwinCmd] {
       override def entityId(cmd: UsrTwinCmd): String =
         key(cmd.chat, cmd.user)
@@ -59,3 +59,4 @@ object UserTwin {
         }
     }
 }
+ */

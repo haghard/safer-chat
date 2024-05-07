@@ -2,7 +2,7 @@ syntax = "proto3";
 
 import "scalapb/scalapb.proto";
 
-import "chatroom.proto";
+import "api/v1/chatroom.proto";
 
 option java_multiple_files = true;
 
@@ -34,6 +34,7 @@ message ParticipantAdded {
   string replyTo = 3 [(scalapb.field).type = "shared.Domain.ReplyTo"];
 }
 
+/*
 message Connected {
   option (scalapb.message).extends = "com.domain.chat.cdc.v1.Cdc";
 
@@ -57,6 +58,7 @@ message MsgPosted {
   server.grpc.chat.UserInfo userInfo = 3 [(scalapb.field).no_box = true];
   string replyTo = 4 [(scalapb.field).type = "shared.Domain.ReplyTo"];
 }
+*/
 
 //https://www.tudorzgureanu.com/define-topic-schema-for-kafka-using-protobuf-with-examples-in-scala/
 message CdcEnvelope {
@@ -65,9 +67,9 @@ message CdcEnvelope {
   oneof payload {
     ChatCreated created = 1;
     ParticipantAdded added = 2;
-    Connected cntd = 3;
-    Disconnected disCntd = 4;
-    MsgPosted posted = 5;
+    //Connected cntd = 3;
+    //Disconnected disCntd = 4;
+    //MsgPosted posted = 5;
   }
 
   string hash = 20 [(scalapb.field).no_box = true];

@@ -5,6 +5,9 @@
 package server.grpc
 package api
 
+import com.datastax.oss.driver.api.core.CqlSession
+import com.datastax.oss.driver.api.core.cql.SimpleStatement
+
 import scala.concurrent.*
 import scala.concurrent.duration.*
 import java.util.concurrent.ConcurrentHashMap
@@ -18,16 +21,16 @@ import org.apache.pekko.stream.scaladsl.*
 import com.domain.chat.ChatCmd
 import com.domain.chat.ChatReply.StatusCode
 import com.domain.chat.{ ChatReply, * }
+import com.domain.chatRoom.*
 import org.apache.pekko.actor.typed.ActorRefResolver
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.{ Askable, schedulerFromActorSystem }
+import org.apache.pekko.cassandra.{ CassandraSessionExtension, CassandraStore }
 import server.grpc.api.ChatRoomApi.ChatError
-import server.grpc.chat.{ ClientCmd, ServerCmd }
+import server.grpc.chat.{ ClientCmd, CmdTag, ServerCmd }
 import shared.Domain.{ ChatName, Otp, Participant, ReplyTo }
 import shared.AppConfig
 
 import scala.util.control.NoStackTrace
-
-// import org.apache.pekko.actor.typed.scaladsl.adapter.{ ClassicActorSystemOps, TypedActorRefOps }
 
 object ChatRoomApi {
 
@@ -36,10 +39,12 @@ object ChatRoomApi {
 
 final class ChatRoomApi(
     appConf: AppConfig,
-    chatRegion: ActorRef[ChatCmd],
-    kss: ConcurrentHashMap[ChatName, stream.KillSwitch],
+    chatUsersRegion: ActorRef[ChatCmd],
+    chatRoomRegion: ActorRef[ChatRoomCmd],
+    kss: ConcurrentHashMap[ChatName, KillSwitch],
   )(using system: ActorSystem[?])
     extends server.grpc.chat.ChatRoom {
+  val ext = CassandraSessionExtension(system)
 
   given ec: ExecutionContext = system.executionContext
   given logger: Logger = system.log
@@ -47,14 +52,23 @@ final class ChatRoomApi(
   given replyToResolver: ActorRefResolver = ActorRefResolver(system)
   given streamRefsResolver: stream.StreamRefResolver = stream.StreamRefResolver(system)
 
+  given cqlSession: CqlSession = ext.cqlSession
+  val getRecentTimeLime = {
+    val s = SimpleStatement
+      .builder("SELECT chat, when, message FROM timeline WHERE chat=? AND time_bucket=? LIMIT ?")
+      .setExecutionProfileName(ext.profileName)
+      .build()
+    cqlSession.prepare(s)
+  }
+
   def post(in: Source[ClientCmd, NotUsed]): Source[ServerCmd, NotUsed] =
     in.prefixAndTail(1).flatMapConcat {
       case (Seq(authMsg), source) =>
         Source
           .lazyFutureSource { () =>
             val user = authMsg.userInfo.user
-            auth(chatRegion, authMsg.chat, user, authMsg.otp, source).map { authSrc =>
-              authSrc.via(flow(chatRegion, authMsg, user))
+            auth(chatUsersRegion, authMsg.chat, user, authMsg.otp, source).map { authSrc =>
+              authSrc.via(flow(chatUsersRegion, authMsg, user))
             }
           }
     }
@@ -65,7 +79,7 @@ final class ChatRoomApi(
       user: Participant,
     ): Flow[ClientCmd, ServerCmd, NotUsed] =
     RestartFlow.withBackoff(stream.RestartSettings(failoverTo.duration, failoverTo.duration.plus(2.seconds), 0.2))(() =>
-      Flow.lazyFutureFlow(() => chatFlow(chatRegion, authMsg, user))
+      Flow.lazyFutureFlow(() => chatRoomFlow(chatRoomRegion, authMsg, user))
     )
 
   private def auth(
@@ -88,12 +102,12 @@ final class ChatRoomApi(
         }
       }
 
-  private def chatFlow(
-      chatRegion: ActorRef[ChatCmd],
+  private def chatRoomFlow(
+      chatRoomRegion: ActorRef[ChatRoomCmd],
       authMsg: ClientCmd,
       user: Participant,
     ): Future[Flow[ClientCmd, ServerCmd, NotUsed]] =
-    chatRegion
+    chatRoomRegion
       .ask[ChatReply](replyTo => ConnectRequest(authMsg.chat, user, authMsg.otp, ReplyTo[ChatReply].toCustom(replyTo)))
       .map { reply =>
         reply.statusCode match {
@@ -109,6 +123,17 @@ final class ChatRoomApi(
                 sinkRef.sink(),
                 srcRef
                   .source
+                  .mapAsync(1) { cmd =>
+                    cmd.tag match {
+                      case CmdTag.PUT =>
+                        Future.successful(Seq(cmd))
+                      case CmdTag.GET =>
+                        CassandraStore.readRecentHistory(cmd, getRecentTimeLime)
+                      case CmdTag.Unrecognized(un) =>
+                        Future.failed(new Exception(s"Unknown CmdTag($un)"))
+                    }
+                  }
+                  .mapConcat(identity)
                   .map { msg =>
                     msg.content.get(appConf.default) match {
                       case Some(defaultBts) =>
@@ -128,12 +153,12 @@ final class ChatRoomApi(
                     }
                   },
               )
-              .backpressureTimeout(8.seconds) // automatic cleanup of slow subscribers
+              .backpressureTimeout(5.seconds) // automatic cleanup of slow subscribers
               .watchTermination() { (_, done) =>
                 logger.info("{}@{} connection has been established", authMsg.chat, user)
                 done.onComplete { _ =>
                   logger.info("{}@{} connection has been closed", authMsg.chat, user)
-                  chatRegion.tell(Disconnect(user, authMsg.chat, authMsg.otp))
+                  chatRoomRegion.tell(Disconnect(user, authMsg.chat, authMsg.otp))
                 }
                 NotUsed
               }

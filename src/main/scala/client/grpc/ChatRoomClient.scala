@@ -35,7 +35,7 @@ object ChatRoomClient {
 
   val Ottawa = server.grpc.chat.Coords(45.41875, -75.70144560830724)
   val Toronto = server.grpc.chat.Coords(43.911806, -80.099738)
-  val chatName = ChatName("aaa")
+  val chatName = ChatName("aaa") // bbb
 
   val cnt = new AtomicInteger(0)
 
@@ -95,10 +95,10 @@ object ChatRoomClient {
         )
       ) ++
         Source
-          .tick(3.second, 1.second, ())
+          .tick(3.second, 700.millis, ())
           .zipWithIndex
           .map { case (_, i) => i }
-          .takeWhile(_ < 150)
+          .takeWhile(_ < 100)
           .map { _ =>
 
             // Each time a message is sent, it is encrypted using each participant's public key and sent to the server which knows how to reach the participants.
@@ -140,46 +140,45 @@ object ChatRoomClient {
       default: ChatUser,
       userPubKeys: java.util.concurrent.ConcurrentHashMap[String, java.security.interfaces.RSAPublicKey],
     )(using logger: Logger
-    ): Unit = {
+    ): Unit =
+    if (serverCmd.tag.isGet) {
+      println("ignore GET")
+    } else {
+      val sender = serverCmd.userInfo.user.raw()
+      ChatUser.recoverFromPubKey(serverCmd.userInfo.pubKey.toStringUtf8()) match {
+        case Some(pubKey) =>
+          if (userPubKeys.putIfAbsent(sender, pubKey) == null) {
+            logger.warn(s"★ ★ ★ ★ ★ ★ $sender joined ★ ★ ★ ★ ★ ★")
+          }
+        case None =>
+          logger.warn(s"★ ★ ★ Got invalid PubKey($sender)  ★ ★ ★")
+      }
 
-    val sender = serverCmd.userInfo.user.raw()
-    ChatUser.recoverFromPubKey(serverCmd.userInfo.pubKey.toStringUtf8()) match {
-      case Some(pubKey) =>
-        if (userPubKeys.putIfAbsent(sender, pubKey) == null) {
-          logger.warn(s"★ ★ ★ ★ ★ ★ $sender joined ★ ★ ★ ★ ★ ★")
-        }
-      case None =>
-        logger.warn(s"★ ★ ★ Got invalid PubKey($sender)  ★ ★ ★")
-    }
-
-    // alice wrote this msg to bob using bob's pub key
-    serverCmd.content.get(user.handle.toString) match {
-      case Some(msgBts) =>
-        try {
-          val msg = cipher.decrypt(msgBts.toByteArray, user.priv)
+      // alice wrote this msg to bob using bob's pub key
+      serverCmd.content.get(user.handle.toString) match {
+        case Some(msgBts) =>
+          try {
+            val msg = cipher.decrypt(msgBts.toByteArray, user.priv)
+            logger.info(
+              s"$sender: [$msg] at ${serverCmd.timeUuid.toUnixTs()} ${serverCmd.serializedSize}bts."
+            )
+          } catch {
+            case NonFatal(ex) =>
+              ex.printStackTrace()
+              throw ex
+          }
+        case None =>
+          val msgBts = serverCmd.content(default.handle.toString)
+          val msg = cipher.decrypt(msgBts.toByteArray, default.priv)
+          // val msg = cipher.decrypt(msgBts.toByteArray, user.priv) boom
           logger.info(
-            s"{}: [{}] {}bts.",
+            s"Default Pub_Key {}: {} {}bts.",
             sender,
             msg,
             serverCmd.serializedSize,
           )
-        } catch {
-          case NonFatal(ex) =>
-            ex.printStackTrace()
-            throw ex
-        }
-      case None =>
-        val msgBts = serverCmd.content(default.handle.toString)
-        val msg = cipher.decrypt(msgBts.toByteArray, default.priv)
-        // val msg = cipher.decrypt(msgBts.toByteArray, user.priv) boom
-        logger.info(
-          s"Default Pub_Key {}: {} {}bts.",
-          sender,
-          msg,
-          serverCmd.serializedSize,
-        )
+      }
     }
-  }
 
   @main def main(args: String*): Unit = {
     val userName = if (args.isEmpty) throw new Exception("Expected <username> !") else args(0)

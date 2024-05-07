@@ -6,8 +6,8 @@ import "google/protobuf/wrappers.proto";
 
 option java_multiple_files = true;
 
-import "domain/chat.proto";
-import "api/request.proto";
+import "domain/v1/chat.proto";
+import "api/v1/request.proto";
 
 package server.grpc.admin;
 

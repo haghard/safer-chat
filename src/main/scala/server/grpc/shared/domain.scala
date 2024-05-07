@@ -254,8 +254,12 @@ object Domain {
       scalapb.TypeMapper[String, CassandraTimeUUID](CassandraTimeUUID(_))(_.raw())
 
     extension (timeUuid: CassandraTimeUUID) {
-      def toUnixTs() =
+      // version
+      def toUnixTs(): Long =
         Uuids.unixTimestamp(UUID.fromString(timeUuid.raw()))
+
+      def toUUID(): UUID =
+        UUID.fromString(timeUuid.raw())
     }
   }
 

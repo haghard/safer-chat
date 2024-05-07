@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/any.proto";
+
+import "scalapb/scalapb.proto";
+
+import "api/v1/chatroom.proto";
+
+option java_multiple_files = true;
+
+package com.domain.chatRoom;
+
+option (scalapb.options) = {
+  lenses: true,
+  preserve_unknown_fields: false,
+  no_default_values_in_constructor: false,
+  no_primitive_wrappers: true,
+  single_file: true,
+  preamble: "sealed trait ChatRoomCmd extends scalapb.GeneratedMessage { ",
+  preamble: " def chat: shared.Domain.ChatName ",
+  preamble: "} ",
+};
+
+message ConnectRequest {
+  option (scalapb.message).extends = "ChatRoomCmd";
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
+  string otp = 3 [(scalapb.field).type = "shared.Domain.Otp"];
+  string replyTo = 5 [(scalapb.field).type = "shared.Domain.ReplyTo"];
+
+}
+
+message Disconnect {
+  option (scalapb.message).extends = "ChatRoomCmd";
+  string user = 1 [(scalapb.field).type = "shared.Domain.Participant"];
+  string chat = 2 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string otp = 3 [(scalapb.field).type = "shared.Domain.Otp"];
+  server.grpc.chat.ClientCmd lastCmd = 4;
+}
