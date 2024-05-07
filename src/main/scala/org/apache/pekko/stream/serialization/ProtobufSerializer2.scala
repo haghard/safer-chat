@@ -1,4 +1,4 @@
-package org.apache.pekko.stream.serialization
+/*package org.apache.pekko.stream.serialization
 
 import org.apache.pekko.actor.ExtendedActorSystem
 import org.apache.pekko.serialization.ByteBufferSerializer
@@ -89,7 +89,8 @@ class ProtobufSerializer2(val system: ExtendedActorSystem)
     directByteBuffer.get(bytes)
     // internal.fromBinary(bytes)
     internal.fromBinary(bytes, Some(manifest))
-     */
+ */
 
   }
 }
+ */

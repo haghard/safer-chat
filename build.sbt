@@ -70,14 +70,17 @@ lazy val root = project
       "org.apache.pekko" %% "pekko-slf4j" % pekkoV,
 
       "com.madgag.spongycastle" % "core" % "1.58.0.0",
-      "org.bouncycastle" % "bcpkix-jdk18on" % "1.78",
+      "org.bouncycastle" % "bcpkix-jdk18on" % "1.78.1",
 
       "io.aeron" % "aeron-driver" % "1.44.1",
       "io.aeron" % "aeron-client" % "1.44.1",
 
-      "org.wvlet.airframe" %% "airframe-ulid" % "24.4.0",
+      "org.wvlet.airframe" %% "airframe-ulid" % "24.4.1",
       "com.github.bastiaanjansen" % "otp-java" % "2.0.3",
       "com.datastax.oss" % "java-driver-core" % "4.17.0",
+
+      //
+      "com.github.jwt-scala"  %% "jwt-core"   % "10.0.0", // needed for JWT generation
     ),
 
     // dependencyOverrides ++= Seq(),
@@ -121,8 +124,14 @@ lazy val root = project
       "-XX:+PrintCommandLineFlags",
       //"-XX:+PrintGCDetails",
       //"-XshowSettings:vm",
+
+      "-Xms212m",
       "-Xmx256m",
       "-XshowSettings:system -version",
+
+      "-XX:ThreadStackSize=1048576", //[0 ... 1048576]
+      "-XX:ReservedCodeCacheSize=251658240",
+      "-XX:MaxDirectMemorySize=128m",
 
       /*"-XX:+PrintFieldLayout",*/
       /*"-XX:MaxMetaspaceSize=650m",*/
@@ -138,7 +147,7 @@ lazy val root = project
       // https://dzone.com/articles/troubleshooting-problems-with-native-off-heap-memo
       // To allow getting native memory stats for threads
       "-XX:NativeMemoryTracking=summary", // detail
-      "-XX:MaxDirectMemorySize=128m",
+
       // "-XX:MetaspaceSize=20M",
       // https://youtu.be/kKigibHrV5I
       // "-XX:-UseAdaptiveSizePolicy", // -UseAdaptiveSizePolicy --disable use
@@ -161,6 +170,7 @@ lazy val root = project
     // comment out for test:run
     run / fork := true,
     run / connectInput := true,
+    //run / javaOptions ++= unnamedJavaOptions
   )
   .enablePlugins(PekkoGrpcPlugin, JavaAppPackaging, BuildInfoPlugin)
 
@@ -171,6 +181,26 @@ scalafmtOnCompile := true
 addCommandAlias("c", "scalafmt;compile")
 addCommandAlias("r", "reload")
 addCommandAlias("as", "clean;assembly")
+
+
+// See https://github.com/apache/spark/blob/v3.3.2/launcher/src/main/java/org/apache/spark/launcher/JavaModuleOptions.java
+val unnamedJavaOptions = List(
+  "-XX:+IgnoreUnrecognizedVMOptions",
+  "--add-opens=java.base/java.lang=ALL-UNNAMED",
+  "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
+  "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+  "--add-opens=java.base/java.io=ALL-UNNAMED",
+  "--add-opens=java.base/java.net=ALL-UNNAMED",
+  "--add-opens=java.base/java.nio=ALL-UNNAMED",
+  "--add-opens=java.base/java.util=ALL-UNNAMED",
+  "--add-opens=java.base/java.util.concurrent=ALL-UNNAMED",
+  "--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED",
+  "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+  "--add-opens=java.base/sun.nio.cs=ALL-UNNAMED",
+  "--add-opens=java.base/sun.security.action=ALL-UNNAMED",
+  "--add-opens=java.base/sun.util.calendar=ALL-UNNAMED",
+  "--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED"
+)
 
 //java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 ./target/scala-3.4.1/safer-chat-0.0.1-SNAPSHOT.jar
 //java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 ./target/scala-3.4.1/safer-chat-0.0.1-SNAPSHOT.jar

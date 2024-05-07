@@ -86,9 +86,8 @@ final class ConsistentHashingAllocation(rebalanceLimit: Int) extends ActorSystem
         rebalanceLimit <= 0 || result.size < rebalanceLimit
 
       currentShardAllocations
-        // deterministic order, at least easier to test
         .toVector
-        .sortBy { case (region, _) => nodeForRegion(region) }(Address.addressOrdering)
+        .sortBy { case (region, _) => nodeForRegion(region) }(Address.addressOrdering) // deterministic order
         .foreach {
           case (currentRegion, shardIds) =>
             shardIds.foreach { shardId =>

@@ -6,8 +6,6 @@ import "google/protobuf/any.proto";
 
 import "scalapb/scalapb.proto";
 
-import "chatroom.proto";
-
 option java_multiple_files = true;
 
 package com.domain.chat.request;
@@ -24,21 +22,25 @@ option (scalapb.options) = {
 };
 
 
-message CreateChatReq {
+message ChatReq {
   option (scalapb.message).extends = "ApiReq";
   string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  ChatReqOp op = 2;
 }
 
-message AddUserReq {
+enum ChatReqOp {
+  CREATE = 0;
+}
+
+message UserReq {
   option (scalapb.message).extends = "ApiReq";
 
   string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
   string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
+  UserReqOp op = 3;
 }
 
-message RmUserReq {
-  option (scalapb.message).extends = "ApiReq";
-
-  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
-  string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
+enum UserReqOp {
+  ADD = 0;
+  REMOVE = 1;
 }

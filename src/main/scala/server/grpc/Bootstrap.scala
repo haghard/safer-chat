@@ -9,14 +9,17 @@ import com.datastax.oss.driver.api.core.CqlSession
 import com.typesafe.config.ConfigFactory
 import org.apache.pekko
 import org.apache.pekko.actor.typed.ActorSystem
-import org.apache.pekko.cassandra.CassandraStore
+import org.apache.pekko.cassandra.{ CassandraSessionExtension, CassandraStore }
 import shared.AppConfig
+
 import scala.jdk.CollectionConverters.*
 
 object Bootstrap {
   val APP_NAME = "safer-chat"
 
   def run(): Unit = {
+
+    // val cqlSession: CqlSession = CqlSession.builder().withKeyspace(CqlIdentifier.fromCql("chat")).build()
 
     given system: ActorSystem[Nothing] = {
       val cfg = ConfigFactory.load("application.conf").withFallback(ConfigFactory.load())
@@ -35,10 +38,11 @@ object Bootstrap {
     val cps = system
       .settings
       .config
-      .getStringList("datastax-java-driver.basic.contact-points")
+      .getStringList("datastax-java-driver.profiles.local.basic.contact-points")
       .asScala
 
-    try CassandraStore.createTables(CqlSession.builder().build(), system.log)
+    val cqlSession: CqlSession = CassandraSessionExtension(system).cqlSession
+    try CassandraStore.createTables(cqlSession, system.log)
     catch {
       case NonFatal(ex) =>
         system.log.error(s"A connection to [${cps.mkString(",")}] can't be established", ex)

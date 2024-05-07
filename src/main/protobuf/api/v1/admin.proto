@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+import "scalapb/scalapb.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_multiple_files = true;
+
+import "domain/v1/chat.proto";
+import "api/v1/request.proto";
+
+package server.grpc.admin;
+
+
+service Admin {
+  //google.protobuf.Empty
+  rpc AddChat (com.domain.chat.request.ChatReq) returns (com.domain.chat.ChatReply) {}
+  rpc AddUser (com.domain.chat.request.UserReq) returns (com.domain.chat.ChatReply) {}
+  rpc RmUser (com.domain.chat.request.UserReq) returns (com.domain.chat.ChatReply) {}
+}

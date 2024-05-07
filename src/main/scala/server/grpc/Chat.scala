@@ -10,7 +10,6 @@ import com.domain.chat.*
 
 import scala.concurrent.*
 import java.nio.charset.*
-import java.util.concurrent.ConcurrentHashMap
 import shared.*
 import server.grpc.state.ChatState
 import org.apache.pekko.*
@@ -19,12 +18,10 @@ import org.apache.pekko.actor.typed.scaladsl.*
 import org.apache.pekko.cluster.sharding.typed.scaladsl.*
 import org.apache.pekko.persistence.typed.state.scaladsl.*
 import org.apache.pekko.stream.*
-import org.apache.pekko.stream.scaladsl.*
 import shared.Domain.{ ChatName, ReplyTo }
-import server.grpc.chat.*
-import org.apache.pekko.actor.typed.scaladsl.adapter.TypedSchedulerOps
 import org.slf4j.Logger
-import org.apache.pekko.actor.Scheduler
+
+import java.nio.ByteBuffer
 
 object Chat {
 
@@ -32,39 +29,41 @@ object Chat {
 
   val TypeKey = EntityTypeKey[ChatCmd]("chat")
 
-  final case class ChatRoomHub(sink: Sink[ClientCmd, NotUsed], src: Source[ServerCmd, NotUsed])
+  def hexId2Long(hexId: String): Long =
+    java.lang.Long.parseUnsignedLong(hexId, 16)
 
-  def shardingMessageExtractor(numOfShards: Int) =
+  def hashCmd(line: String): Long = {
+    val bts = ByteBuffer.wrap(line.getBytes(StandardCharsets.UTF_8))
+    org.apache.pekko.cassandra.CassandraHash.hash(bts, 0, bts.array.length)
+  }
+
+  def shardingMessageExtractor2(numOfShards: Int) =
+    new cluster.sharding.typed.ShardingMessageExtractor[ChatCmd, ChatCmd] {
+      override def entityId(cmd: ChatCmd): String =
+        hashCmd(cmd.chat.raw()).toHexString
+
+      override def shardId(entityId: String): String =
+        entityId
+        // math.abs(hexId2Long(entityId) % numOfShards).toString
+
+      override def unwrapMessage(cmd: ChatCmd): ChatCmd = cmd
+    }
+
+  def shardingMessageExtractor() =
     new cluster.sharding.typed.ShardingMessageExtractor[ChatCmd, ChatCmd] {
       override def entityId(cmd: ChatCmd): String =
         cmd.chat.raw()
 
       override def shardId(entityId: String): String =
-        math.abs(entityId.hashCode % numOfShards).toString
+        // one entity per chat|shard to isolate rebalancing. We want to rebalance one chat|shard at a time
+        entityId
+      // math.abs(entityId.hashCode % numOfShards).toString
 
       override def unwrapMessage(cmd: ChatCmd): ChatCmd = cmd
     }
 
-  def writeSingleMsg(
-      reqId: String,
-      clientCmd: ClientCmd,
-    )(using
-      sharding: ClusterSharding,
-      sys: ActorSystem[?],
-      resolver: ActorRefResolver,
-    ): Future[ServerCmd] = {
-    val p = Promise[ServerCmd]()
-    val cmd = ServerCmd(clientCmd.chat, clientCmd.content, clientCmd.userInfo)
-    val respondee = sys.systemActorOf(Respondee(reqId, p), reqId)
-    sharding
-      .entityRefFor(Chat.TypeKey, clientCmd.chat.raw())
-      .tell(PostMessage(cmd.chat, cmd.content, cmd.userInfo, ReplyTo[ServerCmd].toCustom(respondee)))
-    p.future
-  }
-
   def apply(
       chatId: ChatName,
-      kss: ConcurrentHashMap[ChatName, KillSwitch],
       appCfg: AppConfig,
     ): Behavior[ChatCmd] =
     Behaviors.setup { ctx =>
@@ -78,12 +77,10 @@ object Chat {
 
       given sharding: ClusterSharding = ClusterSharding(sys)
 
-      given sch: Scheduler = sys.scheduler.toClassic
-
       DurableStateBehavior[ChatCmd, ChatState](
         persistence.typed.PersistenceId.ofUniqueId(chatId.raw()),
         ChatState(),
-        cmdHandler(kss, appCfg),
+        cmdHandler(appCfg),
       )
         .onPersistFailure(SupervisorStrategy.restartWithBackoff(500.millis, 5.seconds, 0.2))
         .receiveSignal {
@@ -96,11 +93,9 @@ object Chat {
     }
 
   def cmdHandler(
-      kss: ConcurrentHashMap[ChatName, KillSwitch],
-      appCfg: AppConfig,
+      appCfg: AppConfig
     )(using
       sys: ActorSystem[?],
-      sch: Scheduler,
       resolver: actor.typed.ActorRefResolver,
       strRefResolvers: stream.StreamRefResolver,
       ctx: ActorContext[ChatCmd],
@@ -164,29 +159,29 @@ object Chat {
         state.name match {
           case Some(chatName) =>
             if (state.registeredParticipants.contains(user)) {
-              if (state.onlineParticipants.contains(user))
-                Effect
-                  .reply(replyTo0)(ChatReply(chat, ChatReply.StatusCode.AlreadyConnected))
-              else {
-                import com.bastiaanjansen.otp.*
-                val maybeOtp = shared.base64Decode(user.raw()).map { secret =>
-                  val sBts = appCfg.salt.getBytes(StandardCharsets.UTF_8) ++ secret
-                  new TOTPGenerator.Builder(sBts)
-                    .withHOTPGenerator { b =>
-                      b.withPasswordLength(8)
-                      b.withAlgorithm(HMACAlgorithm.SHA256)
-                    }
-                    .withPeriod(java.time.Duration.ofSeconds(10))
-                    .build()
-                }
-                if (maybeOtp.map(_.verify(otp.raw())).getOrElse(false)) {
-                  Effect
-                    .reply(replyTo0)(ChatReply(chat, ChatReply.StatusCode.Ok))
-                } else {
-                  Effect
-                    .reply(replyTo0)(ChatReply(chat, ChatReply.StatusCode.AuthorizationError))
-                }
+              // if (state.onlineParticipants.contains(user)) Effect.reply(replyTo0)(ChatReply(chat, ChatReply.StatusCode.AlreadyConnected))
+              // else {
+              import com.bastiaanjansen.otp.*
+              val maybeOtp = shared.base64Decode(user.raw()).map { secret =>
+                val sBts = appCfg.salt.getBytes(StandardCharsets.UTF_8) ++ secret
+                new TOTPGenerator.Builder(sBts)
+                  .withHOTPGenerator { b =>
+                    b.withPasswordLength(8)
+                    b.withAlgorithm(HMACAlgorithm.SHA256)
+                  }
+                  .withPeriod(java.time.Duration.ofSeconds(10))
+                  .build()
               }
+              if (maybeOtp.map(_.verify(otp.raw())).getOrElse(false)) {
+                Effect
+                  .reply(replyTo0)(
+                    ChatReply(chat, statusCode = ChatReply.StatusCode.Ok)
+                  )
+              } else {
+                Effect
+                  .reply(replyTo0)(ChatReply(chat, ChatReply.StatusCode.AuthorizationError))
+              }
+              // }
             } else {
               Effect.reply(replyTo0)(ChatReply(chat, ChatReply.StatusCode.UnknownUser))
             }
@@ -195,86 +190,10 @@ object Chat {
               .reply(replyTo0)(ChatReply(chat, ChatReply.StatusCode.UnknownChat))
         }
 
-      case ConnectRequest(chat, user, otp, replyTo) =>
-        // val settings = StreamRefAttributes.subscriptionTimeout(3.seconds).and(stream.Attributes.inputBuffer(2, 4))
-        logger.info("ConnectRequest {} - Online:[{}]", user.raw(), state.onlineParticipants.mkString(","))
-
-        val replyTo0 = ReplyTo[ChatReply].toBase(replyTo)
-        state.maybeActiveHub match {
-          case Some(hub) =>
-            val srcRef = hub.src.runWith(StreamRefs.sourceRef[ServerCmd]())
-            val sinkRef = hub.sink.runWith(StreamRefs.sinkRef[ClientCmd]())
-            Effect
-              .persist(state.withUsrConnected(user, otp))
-              .thenReply(replyTo0)(_ =>
-                ChatReply(
-                  chat = chat,
-                  sourceRefStr = strRefResolvers.toSerializationFormat(srcRef),
-                  sinkRefStr = strRefResolvers.toSerializationFormat(sinkRef),
-                )
-              )
-
-          case None =>
-            val ((sink, ks), src) =
-              MergeHub
-                .source[ClientCmd](1)
-                .mapAsync(1) { clientCmd =>
-                  // val requestId = CassandraTimeUUID(Uuids.timeBased().toString)
-                  val requestId = wvlet.airframe.ulid.ULID.newULID.toString
-                  pattern.retry(
-                    () => writeSingleMsg(requestId, clientCmd),
-                    attempts = Int.MaxValue,
-                    delay = 2.seconds,
-                  )
-                }
-                .viaMat(KillSwitches.single)(Keep.both)
-                .toMat(BroadcastHub.sink[ServerCmd](1))(Keep.both)
-                // .addAttributes(stream.ActorAttributes.supervisionStrategy { case NonFatal(ex) =>  stream.Supervision.Resume })
-                .run()
-
-            val chatRoomHub = ChatRoomHub(sink, src)
-            kss.put(chat, ks)
-
-            val srcRef = chatRoomHub.src.runWith(StreamRefs.sourceRef[ServerCmd]())
-            val sinkRef = chatRoomHub.sink.runWith(StreamRefs.sinkRef[ClientCmd]())
-
-            Effect
-              .persist(state.withFirstUsrConnected(chatRoomHub, user, otp))
-              .thenReply(replyTo0)(_ =>
-                ChatReply(
-                  chat,
-                  sourceRefStr = strRefResolvers.toSerializationFormat(srcRef),
-                  sinkRefStr = strRefResolvers.toSerializationFormat(sinkRef),
-                )
-              )
-        }
-
-      case Disconnect(user, chat, otp, maybeLastMsg) =>
-        Effect
-          .persist(state.withDisconnected(user, otp))
-          .thenNoReply()
-
-      case PostMessage(chat, content, userInfo, replyTo) =>
-        // val lsn = DurableStateBehavior.lastSequenceNumber(ctx)
-        Effect
-          .persist(state.withMsgPosted(chat, content, userInfo, replyTo))
-          .thenNoReply()
-
-      case StopChatEntity(chat) =>
+      case StopChatEntity(chatName) =>
         Effect
           .none[ChatState]
-          .thenRun { _ =>
-            logger.info("Passivate: {} ★ ★ ★", chat)
-
-            state.onlineParticipants.foreach { ps =>
-              sharding
-                .entityRefFor(UserTwin.TypeKey, UserTwin.key(chat, ps))
-                .!(com.domain.user.DisconnectUsr(chat, ps))
-            }
-            state.maybeActiveHub.foreach { _ =>
-              Option(kss.remove(chat)).foreach(_.shutdown())
-            }
-          }
+          .thenRun(_ => logger.info("Passivate: {} ★ ★ ★", chatName))
           .thenStop()
     }
   }
