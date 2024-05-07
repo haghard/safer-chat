@@ -19,8 +19,6 @@ object Bootstrap {
 
   def run(): Unit = {
 
-    // val cqlSession: CqlSession = CqlSession.builder().withKeyspace(CqlIdentifier.fromCql("chat")).build()
-
     given system: ActorSystem[Nothing] = {
       val cfg = ConfigFactory.load("application.conf").withFallback(ConfigFactory.load())
       val appConf = {

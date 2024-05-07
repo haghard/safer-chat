@@ -146,7 +146,7 @@ object ChatRoom {
               )
           }
 
-        case Disconnect(user, chat, otp, maybeLastMsg) =>
+        case Disconnect(user, chat, otp) =>
           val updated = state.online - user
           logger.info(s"Disconnect: $user - Online: [${state.online.mkString(",")}]")
           if (updated.isEmpty) {

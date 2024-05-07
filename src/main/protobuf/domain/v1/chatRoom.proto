@@ -28,7 +28,7 @@ message ConnectRequest {
   string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
   string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
   string otp = 3 [(scalapb.field).type = "shared.Domain.Otp"];
-  string replyTo = 5 [(scalapb.field).type = "shared.Domain.ReplyTo"];
+  string replyTo = 4 [(scalapb.field).type = "shared.Domain.ReplyTo"];
 
 }
 
@@ -37,5 +37,4 @@ message Disconnect {
   string user = 1 [(scalapb.field).type = "shared.Domain.Participant"];
   string chat = 2 [(scalapb.field).type = "shared.Domain.ChatName"];
   string otp = 3 [(scalapb.field).type = "shared.Domain.Otp"];
-  server.grpc.chat.ClientCmd lastCmd = 4;
 }

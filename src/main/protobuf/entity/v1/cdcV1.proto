@@ -34,42 +34,12 @@ message ParticipantAdded {
   string replyTo = 3 [(scalapb.field).type = "shared.Domain.ReplyTo"];
 }
 
-/*
-message Connected {
-  option (scalapb.message).extends = "com.domain.chat.cdc.v1.Cdc";
-
-  string user = 1 [(scalapb.field).type = "shared.Domain.Participant"];
-  string otp = 2 [(scalapb.field).type = "shared.Domain.Otp"];
-  string replyTo = 3 [(scalapb.field).type = "shared.Domain.ReplyTo"];
-}
-
-message Disconnected {
-  option (scalapb.message).extends = "com.domain.chat.cdc.v1.Cdc";
-
-  string user = 1 [(scalapb.field).type = "shared.Domain.Participant"];
-  string otp = 2 [(scalapb.field).type = "shared.Domain.Otp"];
-}
-
-message MsgPosted {
-  option (scalapb.message).extends = "Cdc";
-
-  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
-  map<string, bytes> content = 2;
-  server.grpc.chat.UserInfo userInfo = 3 [(scalapb.field).no_box = true];
-  string replyTo = 4 [(scalapb.field).type = "shared.Domain.ReplyTo"];
-}
-*/
-
-//https://www.tudorzgureanu.com/define-topic-schema-for-kafka-using-protobuf-with-examples-in-scala/
 message CdcEnvelope {
 
   //All payloads are listed using oneof keyword, can support versioning.
   oneof payload {
     ChatCreated created = 1;
     ParticipantAdded added = 2;
-    //Connected cntd = 3;
-    //Disconnected disCntd = 4;
-    //MsgPosted posted = 5;
   }
 
   string hash = 20 [(scalapb.field).no_box = true];
