@@ -12,6 +12,7 @@ import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.cassandra.{ CassandraSessionExtension, CassandraStore }
 import shared.AppConfig
 
+import shared.*
 import scala.jdk.CollectionConverters.*
 
 object Bootstrap {
@@ -23,7 +24,7 @@ object Bootstrap {
       val cfg = ConfigFactory.load("application.conf").withFallback(ConfigFactory.load())
       val appConf = {
         val app = cfg.getConfig(APP_NAME)
-        AppConfig(app.getInt("port"), app.getString("salt"), app.getString("default"))
+        AppConfig(app.getInt("port"), app.getString("secret-token"), app.getString("default"))
       }
       ActorSystem(Guardian(appConf), APP_NAME, cfg)
     }
@@ -47,7 +48,6 @@ object Bootstrap {
     }
 
     // TODO: for local debug only !!!!!!!!!!!!!!!!!!!
-    import shared.Extentions.*
     val _ = scala.io.StdIn.readLine()
     system.log.warn("★ ★ ★ ★ ★ ★  Shutting down ... ★ ★ ★ ★ ★ ★")
     system.terminate()

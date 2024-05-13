@@ -21,6 +21,12 @@ import java.security.spec.*
 import java.util
 import java.util.*
 import spray.json.*
+import scala.concurrent.duration.*
+import java.time.Duration as JavaDuration
+
+extension (duration: JavaDuration) {
+  def asScala: FiniteDuration = FiniteDuration(duration.toNanos, NANOSECONDS)
+}
 
 def sha256(bts: Array[Byte]): Array[Byte] =
   MessageDigest.getInstance("SHA-256").digest(bts)
@@ -193,7 +199,7 @@ object ChatUserSnapshot extends DefaultJsonProtocol {
 
 final case class AppConfig(
     port: Int,
-    salt: String,
+    secretToken: String,
     default: String)
 
 // https://github.com/keynmol/cloudflare-functions-scalajs/blob/main/src/main/scala/app.scala

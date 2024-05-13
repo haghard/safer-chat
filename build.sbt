@@ -5,6 +5,7 @@ val ProjectName = "safer-chat"
 
 resolvers += "Apache Snapshots" at "https://repository.apache.org/content/repositories/snapshots/"
 
+//show scalacOptions
 lazy val scalac3Settings = Seq(
   scalacOptions ++= Seq(
     "-deprecation",
@@ -64,8 +65,7 @@ lazy val root = project
       "org.apache.pekko" %% "pekko-management" % "1.0.0",
       "org.apache.pekko" %% "pekko-management-cluster-bootstrap" % "1.0.0",
 
-      "ch.qos.logback" % "logback-classic" % "1.2.11",
-      //"ch.qos.logback" % "logback-classic" % "1.4.14"
+      "ch.qos.logback" % "logback-classic" % "1.2.11", //"1.4.14"
 
       "org.apache.pekko" %% "pekko-slf4j" % pekkoV,
 
@@ -75,12 +75,9 @@ lazy val root = project
       "io.aeron" % "aeron-driver" % "1.44.1",
       "io.aeron" % "aeron-client" % "1.44.1",
 
-      "org.wvlet.airframe" %% "airframe-ulid" % "24.4.1",
+      "org.wvlet.airframe" %% "airframe-ulid" % "24.5.0",
       "com.github.bastiaanjansen" % "otp-java" % "2.0.3",
       "com.datastax.oss" % "java-driver-core" % "4.17.0",
-
-      //
-      "com.github.jwt-scala"  %% "jwt-core"   % "10.0.0", // needed for JWT generation
     ),
 
     // dependencyOverrides ++= Seq(),

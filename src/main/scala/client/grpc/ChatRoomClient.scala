@@ -11,13 +11,13 @@ import com.google.protobuf.UnsafeByteOperations
 import com.typesafe.config.ConfigFactory
 
 import java.nio.charset.StandardCharsets
-import java.time.Duration
+import java.time.{ Duration, Instant, ZonedDateTime }
 import java.util
 import java.util.concurrent.atomic.AtomicInteger
 import javax.crypto.Cipher
 import org.slf4j.Logger
 import shared.{ AppConfig, ChatUser }
-import shared.Extentions.*
+import shared.rsa.*
 import server.grpc.*
 import org.apache.pekko.*
 import org.apache.pekko.actor.typed.ActorSystem
@@ -26,13 +26,15 @@ import org.apache.pekko.grpc.GrpcClientSettings
 import org.apache.pekko.stream.scaladsl.Source
 import server.grpc.chat.{ ClientCmd, ServerCmd, UserInfo }
 import _root_.shared.Domain.{ ChatName, Otp, Participant }
+import org.apache.pekko.cassandra.CassandraStore.{ formatter, SERVER_DEFAULT_TZ }
 
 import scala.util.control.NonFatal
+
+import shared.*
 
 object ChatRoomClient {
 
   val APP_NAME = "safer-chat"
-
   val Ottawa = server.grpc.chat.Coords(45.41875, -75.70144560830724)
   val Toronto = server.grpc.chat.Coords(43.911806, -80.099738)
   val chatName = ChatName("aaa") // bbb
@@ -63,7 +65,7 @@ object ChatRoomClient {
     ): Future[Done] = {
 
     logger.warn(s"Performing streaming requests: $userName/${user.handle.toString}")
-    val TOTPGen = new TOTPGenerator.Builder(appConf.salt.getBytes(StandardCharsets.UTF_8) ++ user.handle.bytes)
+    val TOTPGen = new TOTPGenerator.Builder(appConf.secretToken.getBytes(StandardCharsets.UTF_8) ++ user.handle.bytes)
       .withHOTPGenerator { b =>
         b.withPasswordLength(8)
         b.withAlgorithm(HMACAlgorithm.SHA256)
@@ -75,7 +77,7 @@ object ChatRoomClient {
       One Time Password (OTP)
       A One Time Password is a form of authentication that is used to grant access to a single login session.
       It requires two inputs, a static value known as a secret key and a moving factor which changes each time an OTP value is generated.
-      I use user.handle as a a secret key.
+      I use user.handle as a secret key.
      */
     val otp = TOTPGen.now()
 
@@ -95,13 +97,13 @@ object ChatRoomClient {
         )
       ) ++
         Source
-          .tick(3.second, 700.millis, ())
+          .tick(3.second, 2000.millis, ())
           .zipWithIndex
           .map { case (_, i) => i }
           .takeWhile(_ < 100)
           .map { _ =>
 
-            // Each time a message is sent, it is encrypted using each participant's public key and sent to the server which knows how to reach the participants.
+            // Each time a message is sent, it is encrypted using each participant's public key and send to the server which knows how to broadcast it to the participants.
             // We encrypt the same message to each user using theirs pub key
             val msgContent = genMsg(userName)
 
@@ -129,56 +131,56 @@ object ChatRoomClient {
       client.post(requests)
 
     val done: Future[Done] =
-      responseStream.runForeach(onIncomingMsg(_, user, historyUsr, userPubKeys))
+      responseStream.runForeach(onMsg(_, user, historyUsr, userPubKeys))
 
     done
   }
 
-  def onIncomingMsg(
+  def onMsg(
       serverCmd: ServerCmd,
       user: ChatUser,
       default: ChatUser,
       userPubKeys: java.util.concurrent.ConcurrentHashMap[String, java.security.interfaces.RSAPublicKey],
     )(using logger: Logger
-    ): Unit =
-    if (serverCmd.tag.isGet) {
-      println("ignore GET")
-    } else {
-      val sender = serverCmd.userInfo.user.raw()
-      ChatUser.recoverFromPubKey(serverCmd.userInfo.pubKey.toStringUtf8()) match {
-        case Some(pubKey) =>
-          if (userPubKeys.putIfAbsent(sender, pubKey) == null) {
-            logger.warn(s"★ ★ ★ ★ ★ ★ $sender joined ★ ★ ★ ★ ★ ★")
-          }
-        case None =>
-          logger.warn(s"★ ★ ★ Got invalid PubKey($sender)  ★ ★ ★")
-      }
-
-      // alice wrote this msg to bob using bob's pub key
-      serverCmd.content.get(user.handle.toString) match {
-        case Some(msgBts) =>
-          try {
-            val msg = cipher.decrypt(msgBts.toByteArray, user.priv)
-            logger.info(
-              s"$sender: [$msg] at ${serverCmd.timeUuid.toUnixTs()} ${serverCmd.serializedSize}bts."
-            )
-          } catch {
-            case NonFatal(ex) =>
-              ex.printStackTrace()
-              throw ex
-          }
-        case None =>
-          val msgBts = serverCmd.content(default.handle.toString)
-          val msg = cipher.decrypt(msgBts.toByteArray, default.priv)
-          // val msg = cipher.decrypt(msgBts.toByteArray, user.priv) boom
-          logger.info(
-            s"Default Pub_Key {}: {} {}bts.",
-            sender,
-            msg,
-            serverCmd.serializedSize,
-          )
-      }
+    ): Unit = {
+    val sender = serverCmd.userInfo.user.raw()
+    ChatUser.recoverFromPubKey(serverCmd.userInfo.pubKey.toStringUtf8()) match {
+      case Some(pubKey) =>
+        if (userPubKeys.putIfAbsent(sender, pubKey) == null) {
+          logger.warn(s"★ ★ ★ ★ ★ ★ $sender joined ★ ★ ★ ★ ★ ★")
+        }
+      case None =>
+        logger.warn(s"★ ★ ★ Got invalid PubKey($sender)  ★ ★ ★")
     }
+
+    // Example: alice wrote this msg to bob using bob's pub key
+    serverCmd.content.get(user.handle.toString) match {
+      case Some(msgBts) =>
+        try {
+          val msg = cipher.decrypt(msgBts.toByteArray, user.priv)
+          val when = formatter.format(
+            ZonedDateTime.ofInstant(Instant.ofEpochMilli(serverCmd.timeUuid.toUnixTs()), SERVER_DEFAULT_TZ)
+          )
+          logger.info(
+            s"$sender: [$msg] at $when. ${serverCmd.serializedSize}bts."
+          )
+        } catch {
+          case NonFatal(ex) =>
+            ex.printStackTrace()
+            throw ex
+        }
+      case None =>
+        val msgBts = serverCmd.content(default.handle.toString)
+        val msg = cipher.decrypt(msgBts.toByteArray, default.priv)
+        val when = formatter.format(
+          ZonedDateTime.ofInstant(Instant.ofEpochMilli(serverCmd.timeUuid.toUnixTs()), SERVER_DEFAULT_TZ)
+        )
+        // val msg = cipher.decrypt(msgBts.toByteArray, user.priv) boom
+        logger.info(
+          s"Default_pub_key/${sender}: [$msg] at $when. ${serverCmd.serializedSize}bts."
+        )
+    }
+  }
 
   @main def main(args: String*): Unit = {
     val userName = if (args.isEmpty) throw new Exception("Expected <username> !") else args(0)
@@ -189,7 +191,7 @@ object ChatRoomClient {
 
     val appConf = {
       val app = cfg.getConfig(APP_NAME)
-      AppConfig(app.getInt("port"), app.getString("salt"), app.getString("default"))
+      AppConfig(app.getInt("port"), app.getString("secret-token"), app.getString("default"))
     }
 
     given sys: ActorSystem[Nothing] = ActorSystem(Behaviors.empty, "client", cfg)
@@ -198,6 +200,8 @@ object ChatRoomClient {
 
     given grpcClient: server.grpc.chat.ChatRoomClient =
       server.grpc.chat.ChatRoomClient(GrpcClientSettings.fromConfig("server.grpc.ChatRoom").withUserAgent(userName))
+
+    ChatUser.generate()
 
     val chatUsr: ChatUser =
       ChatUser

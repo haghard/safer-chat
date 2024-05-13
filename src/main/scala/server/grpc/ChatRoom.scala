@@ -43,7 +43,7 @@ object ChatRoom {
 
   final case class ChatRoomState(
       chatName: ChatName,
-      cassandraSink: Sink[ServerCmd, NotUsed],
+      cassandraMergeHubSink: Sink[ServerCmd, NotUsed],
       online: HashSet[Participant] = HashSet.empty[Participant],
       recentHistory: Seq[ServerCmd] = Seq.empty,
       ks: Option[KillSwitch] = None,
@@ -59,7 +59,7 @@ object ChatRoom {
       given resolver: ActorRefResolver = ActorRefResolver(ctx.system)
       given strRefResolver: stream.StreamRefResolver = stream.StreamRefResolver(ctx.system)
       given sys: ActorSystem[?] = ctx.system
-      given logger: Logger = sys.log
+      given logger: org.slf4j.Logger = sys.log
       active(ChatRoomState(chat, cassandraSink), chatUserRegion, kss)
     }
 
@@ -71,93 +71,92 @@ object ChatRoom {
       sys: ActorSystem[?],
       resolver: ActorRefResolver,
       strRefResolver: stream.StreamRefResolver,
-      logger: Logger,
+      logger: org.slf4j.Logger,
     ): Behavior[ChatRoomCmd] =
-    Behaviors.setup { ctx =>
-      Behaviors.receiveMessage[ChatRoomCmd] {
-        case ConnectRequest(chatName, user, otp, replyTo) =>
-          logger.info("ConnectRequest from {}. Online: [{}]", user.raw(), state.online.mkString(","))
-          val replyTo0 = ReplyTo[ChatReply].toBase(replyTo)
-          state.maybeHub match {
-            case Some(hub) =>
-              val getRecentHistory =
-                ServerCmd(
-                  chatName,
-                  timeUuid = CassandraTimeUUID(Uuids.timeBased().toString),
-                  tag = server.grpc.chat.CmdTag.GET,
-                )
-
-              val srcRef = (Source.single(getRecentHistory) ++ hub.src).runWith(StreamRefs.sourceRef[ServerCmd]())
-              val sinkRef = hub.sink.runWith(StreamRefs.sinkRef[ClientCmd]())
-              replyTo0.tell(
-                ChatReply(
-                  chat = chatName,
-                  sourceRefStr = strRefResolver.toSerializationFormat(srcRef),
-                  sinkRefStr = strRefResolver.toSerializationFormat(sinkRef),
-                )
+    Behaviors.receiveMessage[ChatRoomCmd] {
+      case ConnectRequest(chatName, user, otp, replyTo) =>
+        logger.info("ConnectRequest from {}. Online: [{}]", user.raw(), state.online.mkString(","))
+        val replyTo0 = ReplyTo[ChatReply].toBase(replyTo)
+        state.maybeHub match {
+          case Some(hub) =>
+            val getRecentHistory =
+              ServerCmd(
+                chatName,
+                timeUuid = CassandraTimeUUID(Uuids.timeBased().toString),
+                tag = server.grpc.chat.CmdTag.GET,
               )
-              active(state.copy(online = state.online + user), chatUserRegion, kss)
 
-            case None =>
-              val ((sink, ks0), src) =
-                // TODO: try this https://github.com/haghard/akka-pq/blob/master/src/main/scala/sample/blog/processes/StatefulProcess.scala
-                MergeHub
-                  .source[ClientCmd](perProducerBufferSize = 1)
-                  .map(clientCmd =>
-                    ServerCmd(
-                      clientCmd.chat,
-                      clientCmd.content,
-                      clientCmd.userInfo,
-                      CassandraTimeUUID(Uuids.timeBased().toString),
-                    )
+            val srcRef = (Source.single(getRecentHistory) ++ hub.src).runWith(StreamRefs.sourceRef[ServerCmd]())
+            val sinkRef = hub.sink.runWith(StreamRefs.sinkRef[ClientCmd]())
+            replyTo0.tell(
+              ChatReply(
+                chat = chatName,
+                sourceRefStr = strRefResolver.toSerializationFormat(srcRef),
+                sinkRefStr = strRefResolver.toSerializationFormat(sinkRef),
+              )
+            )
+            active(state.copy(online = state.online + user), chatUserRegion, kss)
+
+          case None =>
+            val ((sink, ks0), src) =
+              // TODO: try this https://github.com/haghard/akka-pq/blob/master/src/main/scala/sample/blog/processes/StatefulProcess.scala
+              MergeHub
+                .source[ClientCmd](perProducerBufferSize = 1)
+                // .throttle(128, 1.second, 128, ThrottleMode.shaping)
+                .map(clientCmd =>
+                  ServerCmd(
+                    clientCmd.chat,
+                    clientCmd.content,
+                    clientCmd.userInfo,
+                    CassandraTimeUUID(Uuids.timeBased().toString),
                   )
-                  .log(s"$chatName.hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}")(sys.toClassic.log)
-                  .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
-                  .alsoTo(state.cassandraSink)
-                  .viaMat(KillSwitches.single)(Keep.both)
-                  .toMat(BroadcastHub.sink[ServerCmd](bufferSize = 1))(Keep.both)
-                  // .addAttributes(stream.ActorAttributes.supervisionStrategy { case NonFatal(ex) =>  stream.Supervision.Resume })
-                  .run()
-
-              kss.put(chatName, ks0)
-              val chatRoomHub = ChatRoomHub(sink, src)
-
-              val getRecentHistory =
-                ServerCmd(
-                  chatName,
-                  timeUuid = CassandraTimeUUID(Uuids.timeBased().toString),
-                  tag = server.grpc.chat.CmdTag.GET,
                 )
+                .log(s"$chatName.hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}")(sys.toClassic.log)
+                .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
+                .alsoTo(state.cassandraMergeHubSink)
+                .viaMat(KillSwitches.single)(Keep.both)
+                .toMat(BroadcastHub.sink[ServerCmd](bufferSize = 1))(Keep.both)
+                // .addAttributes(stream.ActorAttributes.supervisionStrategy { case NonFatal(ex) =>  stream.Supervision.Resume })
+                .run()
 
-              val srcRef =
-                (Source.single(getRecentHistory) ++ chatRoomHub.src).runWith(StreamRefs.sourceRef[ServerCmd]())
-              val sinkRef = chatRoomHub.sink.runWith(StreamRefs.sinkRef[ClientCmd]())
-              replyTo0.tell(
-                ChatReply(
-                  chat = chatName,
-                  sourceRefStr = strRefResolver.toSerializationFormat(srcRef),
-                  sinkRefStr = strRefResolver.toSerializationFormat(sinkRef),
-                )
-              )
-              active(
-                state.copy(online = state.online + user, ks = Some(ks0), maybeHub = Some(chatRoomHub)),
-                chatUserRegion,
-                kss,
-              )
-          }
+            kss.put(chatName, ks0)
+            val chatRoomHub = ChatRoomHub(sink, src)
 
-        case Disconnect(user, chat, otp) =>
-          val updated = state.online - user
-          logger.info(s"Disconnect: $user - Online: [${state.online.mkString(",")}]")
-          if (updated.isEmpty) {
-            state.ks.foreach(_.shutdown())
-            Option(kss.remove(chat)).foreach(_.shutdown())
-            logger.info("★ ★ ★ Stopped: {} ★ ★ ★", state.chatName)
-            chatUserRegion.tell(StopChatEntity(chat))
-            Behaviors.stopped
-          } else {
-            active(state.copy(online = updated), chatUserRegion, kss)
-          }
-      }
+            val getRecentHistory =
+              ServerCmd(
+                chatName,
+                timeUuid = CassandraTimeUUID(Uuids.timeBased().toString),
+                tag = server.grpc.chat.CmdTag.GET,
+              )
+
+            val srcRef =
+              (Source.single(getRecentHistory) ++ chatRoomHub.src).runWith(StreamRefs.sourceRef[ServerCmd]())
+            val sinkRef = chatRoomHub.sink.runWith(StreamRefs.sinkRef[ClientCmd]())
+            replyTo0.tell(
+              ChatReply(
+                chat = chatName,
+                sourceRefStr = strRefResolver.toSerializationFormat(srcRef),
+                sinkRefStr = strRefResolver.toSerializationFormat(sinkRef),
+              )
+            )
+            active(
+              state.copy(online = state.online + user, ks = Some(ks0), maybeHub = Some(chatRoomHub)),
+              chatUserRegion,
+              kss,
+            )
+        }
+
+      case Disconnect(user, chat, otp) =>
+        val updated = state.online - user
+        logger.info(s"Disconnect: $user - Online: [${state.online.mkString(",")}]")
+        if (updated.isEmpty) {
+          state.ks.foreach(_.shutdown())
+          Option(kss.remove(chat)).foreach(_.shutdown())
+          logger.info("★ ★ ★ Stopped: {} ★ ★ ★", state.chatName)
+          chatUserRegion.tell(StopChatEntity(chat))
+          Behaviors.stopped
+        } else {
+          active(state.copy(online = updated), chatUserRegion, kss)
+        }
     }
 }

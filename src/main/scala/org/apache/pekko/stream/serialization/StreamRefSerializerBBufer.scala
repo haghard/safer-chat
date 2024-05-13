@@ -48,6 +48,8 @@ final class StreamRefSerializerBBufer(val system: ExtendedActorSystem)
     with SerializationSupport
     with ByteBufferSerializer {
 
+  // val logger = system.log
+
   // org.apache.pekko.stream.serialization.StreamRefSerializer
   val SequencedOnNextManifest = "A"
   val CumulativeDemandManifest = "B"
@@ -134,8 +136,9 @@ final class StreamRefSerializerBBufer(val system: ExtendedActorSystem)
     val payload = o.getPayload()
     val bytes = payload.getEnclosedMessage().toByteArray()
 
-    // val ser = serialization.serializerByIdentity(p.getSerializerId)
-    // println(s"next(${o.getSeqNr}, ${p.getMessageManifest.toStringUtf8}/${p.getSerializerId}, ${o.getSerializedSize} bts)")
+    val ser = serialization.serializerByIdentity(payload.getSerializerId)
+
+    // logger.info(s"next(${o.getSeqNr}, ${payload.getSerializerId}, ${o.getSerializedSize} bts)")
     // println(s"next(${o.getSeqNr()}, ${payload.getSerializerId()},${o.getSerializedSize()} bts)")
 
     payload.getSerializerId() match {

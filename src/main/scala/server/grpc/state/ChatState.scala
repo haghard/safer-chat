@@ -19,7 +19,7 @@ final case class ChatState(
   def withName(chatName: ChatName, replyTo: ReplyTo) =
     self.copy(
       name = Some(chatName),
-      cdc = CdcEnvelope(Payload.Created(ChatCreated(chatName, replyTo))),
+      cdc = ChatCreated(chatName, replyTo),
     )
 
   def withNewUser(
@@ -30,7 +30,7 @@ final case class ChatState(
     val allUsers = self.registeredParticipants + newUser
     self.copy(
       registeredParticipants = allUsers,
-      cdc = CdcEnvelope(Payload.Added(ParticipantAdded(allUsers.mkString(","), chat, replyTo))),
+      cdc = ParticipantAdded(allUsers.mkString(","), chat, replyTo),
     )
   }
 

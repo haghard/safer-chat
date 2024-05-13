@@ -163,7 +163,7 @@ object Chat {
               // else {
               import com.bastiaanjansen.otp.*
               val maybeOtp = shared.base64Decode(user.raw()).map { secret =>
-                val sBts = appCfg.salt.getBytes(StandardCharsets.UTF_8) ++ secret
+                val sBts = appCfg.secretToken.getBytes(StandardCharsets.UTF_8) ++ secret
                 new TOTPGenerator.Builder(sBts)
                   .withHOTPGenerator { b =>
                     b.withPasswordLength(8)

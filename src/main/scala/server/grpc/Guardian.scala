@@ -14,7 +14,7 @@ import java.lang.management.ManagementFactory
 import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.Logger
 import server.grpc.api.*
-import shared.Extentions.*
+import shared.rsa.*
 import org.apache.pekko.actor.typed.*
 import org.apache.pekko.actor.typed.scaladsl.*
 import org.apache.pekko.cassandra.CassandraStore
@@ -110,10 +110,11 @@ object Guardian {
                       ClusterShardingSettings
                         .PassivationStrategySettings
                         .defaults
-                        .withIdleEntityPassivation(30.seconds)
+                        .withIdleEntityPassivation(3.minutes)
                     )
                 )
                 .withMessageExtractor(Chat.shardingMessageExtractor())
+                .withStopMessage(StopChatEntity())
                 .withAllocationStrategy(allocationStrategy)
             )
 
@@ -131,6 +132,7 @@ object Guardian {
                         ClusterShardingSettings
                           .PassivationStrategySettings
                           .defaults
+                          // .withActiveEntityLimit(256) TODO:
                           .withIdleEntityPassivation(30.seconds)
                       )
                   )

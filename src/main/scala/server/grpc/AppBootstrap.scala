@@ -8,7 +8,7 @@ import scala.concurrent.Future
 import scala.concurrent.duration.*
 import scala.util.*
 import java.util.concurrent.ConcurrentHashMap
-import shared.Extentions.*
+import shared.rsa.*
 import org.apache.pekko.Done
 import org.apache.pekko.actor.CoordinatedShutdown
 import org.apache.pekko.actor.CoordinatedShutdown.*
@@ -16,9 +16,11 @@ import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.cassandra.CassandraSessionExtension
 import org.apache.pekko.http.scaladsl.*
 import org.apache.pekko.http.scaladsl.model.*
+import org.apache.pekko.management.scaladsl.PekkoManagement
 import org.apache.pekko.stream.KillSwitch
 import shared.AppConfig
 import shared.Domain.ChatName
+import shared.*
 
 object AppBootstrap {
 
@@ -31,12 +33,9 @@ object AppBootstrap {
     )(using sys: ActorSystem[?]
     ): Unit = {
     import sys.executionContext
-
     val logger = sys.log
-
     val host = sys.settings.config.getString("pekko.remote.artery.canonical.hostname")
     val port = appCfg.port
-
     val phaseTimeout =
       sys.settings.config.getDuration("pekko.coordinated-shutdown.default-phase-timeout").asScala
 
@@ -52,10 +51,10 @@ object AppBootstrap {
         case Success(binding) =>
           logger.info("{} (GRPC)", Bootstrap.APP_NAME)
           logger.info(s"""
-              |★ ★ ★ ★ ★ ★ ★ ★ ★ ActorSystem(${sys.name}) ★ ★ ★ ★ ★ ★ ★ ★ ★
-              |${sys.printTree}
-              |★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★
-              |""".stripMargin)
+               |★ ★ ★ ★ ★ ★ ★ ★ ★ ActorSystem(${sys.name}) ★ ★ ★ ★ ★ ★ ★ ★ ★
+               |${sys.printTree}
+               |★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★
+               |""".stripMargin)
 
           shutdown.addTask(PhaseBeforeServiceUnbind, "before-unbind") { () =>
             Future.successful {
@@ -74,6 +73,13 @@ object AppBootstrap {
             // No new connections are accepted. Existing connections are still allowed to perform request/response cycles
             binding.unbind().map { done =>
               logger.info("★ ★ ★ CoordinatedShutdown [http-api.unbind] ★ ★ ★")
+              done
+            }
+          }
+
+          shutdown.addTask(PhaseServiceUnbind, "management.stop") { () =>
+            PekkoManagement(sys).stop().map { done =>
+              logger.info("CoordinatedShutdown.3 [management.stop]")
               done
             }
           }
@@ -108,39 +114,25 @@ object AppBootstrap {
 
           shutdown.addTask(PhaseBeforeClusterShutdown, "before-cluster-shutdown.0") { () =>
             Http()
-              .shutdownAllConnectionPools()
+              .shutdownAllConnectionPools() // forcefully kils connections that are still open
               .flatMap(_ =>
-                org
-                  .apache
-                  .pekko
-                  .pattern
-                  .after(2.seconds)(Future.successful {
+                scala
+                  .jdk
+                  .javaapi
+                  .FutureConverters
+                  .asScala(CassandraSessionExtension(sys).cqlSession.forceCloseAsync())
+                  .map { _ =>
                     logger.info(s"★ ★ ★ CoordinatedShutdown [before-cluster-shutdown.0]  ★ ★ ★")
                     Done
-                  })
+                  }
               )
           }
 
           shutdown.addTask(PhaseActorSystemTerminate, "actor-system-terminate.0") { () =>
-            Http()
-              .shutdownAllConnectionPools()
-              .flatMap(_ =>
-                org
-                  .apache
-                  .pekko
-                  .pattern
-                  .after(2.seconds)(
-                    scala
-                      .jdk
-                      .javaapi
-                      .FutureConverters
-                      .asScala(CassandraSessionExtension(sys).cqlSession.forceCloseAsync())
-                      .map { _ =>
-                        logger.info("★ ★ ★ CoordinatedShutdown [actor-system-terminate.0] ★ ★ ★")
-                        Done
-                      }
-                  )
-              )
+            Future.successful {
+              logger.info("★ ★ ★ CoordinatedShutdown [actor-system-terminate.0] ★ ★ ★")
+              Done
+            }
           }
       }
   }
