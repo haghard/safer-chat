@@ -153,7 +153,13 @@ lazy val root = project
       "java.base/sun.nio.ch=ALL-UNNAMED",
 
       //https://youtu.be/vh4qAsxegNY?list=LL
-      "-XX:MaxRAM=412m",
+
+      //https://github.com/docker-library/docs/blob/2bb63e73456f4bc836c5e42d6871131a82e548f1/openjdk/content.md?plain=1#L56
+      //RAM limit is supported by Windows Server containers, but currently the JVM cannot detect it.
+      // To prevent excessive memory allocations, `-XX:MaxRAM=...` option must be specified with the value that is not bigger than the containers RAM limit.
+      //"-XX:MaxRAM=412m",
+
+      //TODO: Check this out: https://github.com/kamilkloch/websocket-benchmark/blob/master/build.sbt
 
       /*
       "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED",
@@ -178,7 +184,6 @@ scalafmtOnCompile := true
 addCommandAlias("c", "scalafmt;compile")
 addCommandAlias("r", "reload")
 addCommandAlias("as", "clean;assembly")
-
 
 // See https://github.com/apache/spark/blob/v3.3.2/launcher/src/main/java/org/apache/spark/launcher/JavaModuleOptions.java
 val unnamedJavaOptions = List(

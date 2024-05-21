@@ -5,7 +5,6 @@
 package server.grpc
 
 import scala.util.control.NonFatal
-import com.datastax.oss.driver.api.core.CqlSession
 import com.typesafe.config.ConfigFactory
 import org.apache.pekko
 import org.apache.pekko.actor.typed.ActorSystem
@@ -40,11 +39,12 @@ object Bootstrap {
       .getStringList("datastax-java-driver.profiles.local.basic.contact-points")
       .asScala
 
-    val cqlSession: CqlSession = CassandraSessionExtension(system).cqlSession
-    try CassandraStore.createTables(cqlSession, system.log)
-    catch {
+    try {
+      val cqlSession = CassandraSessionExtension(system).cqlSession
+      CassandraStore.createTables(cqlSession, system.log)
+    } catch {
       case NonFatal(ex) =>
-        system.log.error(s"A connection to [${cps.mkString(",")}] can't be established", ex)
+        system.log.error(s"CassandraSession error", ex)
     }
 
     // TODO: for local debug only !!!!!!!!!!!!!!!!!!!

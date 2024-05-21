@@ -16,8 +16,6 @@ import java.util
 import java.util.concurrent.atomic.AtomicInteger
 import javax.crypto.Cipher
 import org.slf4j.Logger
-import shared.{ AppConfig, ChatUser }
-import shared.rsa.*
 import server.grpc.*
 import org.apache.pekko.*
 import org.apache.pekko.actor.typed.ActorSystem
@@ -25,12 +23,13 @@ import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.grpc.GrpcClientSettings
 import org.apache.pekko.stream.scaladsl.Source
 import server.grpc.chat.{ ClientCmd, ServerCmd, UserInfo }
-import _root_.shared.Domain.{ ChatName, Otp, Participant }
 import org.apache.pekko.cassandra.CassandraStore.{ formatter, SERVER_DEFAULT_TZ }
 
 import scala.util.control.NonFatal
 
 import shared.*
+import shared.rsa.*
+import shared.Domain.*
 
 object ChatRoomClient {
 

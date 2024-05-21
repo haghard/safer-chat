@@ -82,6 +82,7 @@ object Guardian {
                      |Members:[${membersByAge.map(_.details()).mkString(", ")}]
                      |${server.grpc.BuildInfo.toString}
                      |Environment: [TZ:${TimeZone.getDefault.getID}. Start time:${LocalDateTime.now()}]
+                     |-XX:MaxRAMPercentage=${MemoryUtil2.determineReasonableMaxRAMPercentage()} 😄
                      |PID:${ProcessHandle.current().pid()} JVM: $jvmInfo
                      |👍✅🚀🧪
                      |---------------------------------------------------------------------------------

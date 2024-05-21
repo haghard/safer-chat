@@ -95,6 +95,7 @@ object ChatRoom {
                 sinkRefStr = strRefResolver.toSerializationFormat(sinkRef),
               )
             )
+            // TODO: log session user, otp,
             active(state.copy(online = state.online + user), chatUserRegion, kss)
 
           case None =>

@@ -253,6 +253,7 @@ object Domain {
       TypeMapper[String, ReplyTo](ReplyTo(_))(_.raw())
   }
 
+  // IdempotencyToken
   opaque type CassandraTimeUUID = String
 
   object CassandraTimeUUID extends Opq[CassandraTimeUUID, String] {

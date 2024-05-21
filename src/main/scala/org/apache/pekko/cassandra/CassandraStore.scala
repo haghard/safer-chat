@@ -82,17 +82,18 @@ object CassandraStore {
         }
       }
       log.info(profileConf)
-      log.info("★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★")
-
-      log.info(CassandraStore.chatDetailsTable)
-      log.info(CassandraStore.chatTimelineTable)
+      log.info("★ ★ " * 10)
 
       cqlSession.execute(CassandraStore.chatDetailsTable)
+      log.info("Executed \n" + CassandraStore.chatDetailsTable)
+
       cqlSession.execute(CassandraStore.chatTimelineTable)
+      log.info("Executed \n" + CassandraStore.chatTimelineTable)
     } catch {
       case NonFatal(ex) =>
-        log.error(s"Table creation error", ex)
+        log.error("Tables creation error", ex)
         cqlSession.close()
+        throw ex
     }
 
   def readRecentHistory(
@@ -236,9 +237,9 @@ object CassandraStore {
 
     // https://github.com/paypal/squbs/blob/master/docs/flow-ordering.md
 
-    Flow[ServerCmd]
+    /*Flow[ServerCmd]
       .buffer(8, OverflowStrategy.backpressure)
-      .to(Sink.queue[ServerCmd](maxConcurrentPulls = 1)) // ???
+      .to(Sink.queue[ServerCmd](maxConcurrentPulls = 1))*/
 
     MergeHub
       .source[ServerCmd](perProducerBufferSize = 1)
