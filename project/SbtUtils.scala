@@ -10,7 +10,7 @@ object SbtUtils {
 
   def prompt(projectName: String): String =
     gitPrompt.fold(projectPrompt(projectName)) { g =>
-      s"$g:${projectPrompt(projectName)}"
+      s"${styled("λ")} $g:${projectPrompt(projectName)}"
     }
 
   private def projectPrompt(projectName: String): String =

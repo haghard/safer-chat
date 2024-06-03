@@ -25,7 +25,7 @@ import org.apache.pekko.cluster.typed.*
 import org.apache.pekko.grpc.scaladsl.*
 import org.apache.pekko.http.scaladsl.model.*
 import org.apache.pekko.stream.*
-import org.apache.pekko.stream.scaladsl.Sink
+import server.grpc.chat.ChatRoomHandler
 import shared.AppConfig
 import shared.Domain.ChatName
 
@@ -143,11 +143,7 @@ object Guardian {
 
             val grpcService: HttpRequest => Future[HttpResponse] =
               ServiceHandler.concatOrNotFound(
-                server
-                  .grpc
-                  .chat
-                  .ChatRoomHandler
-                  .partial(new ChatRoomApi(appCfg, chatUserRegion, chatRoomRegion, kss)),
+                ChatRoomHandler.partial(new ChatRoomApi(appCfg, chatUserRegion, chatRoomRegion, kss)),
                 server.grpc.admin.AdminHandler.partial(new AdminApi(appCfg, chatUserRegion)),
                 ServerReflection.partial(List(server.grpc.chat.ChatRoom, server.grpc.admin.Admin)),
               )

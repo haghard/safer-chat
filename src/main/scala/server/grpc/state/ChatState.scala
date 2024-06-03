@@ -8,7 +8,6 @@ package state
 import scala.collection.immutable.HashSet
 import com.domain.chat.cdc.v1.*
 import com.domain.chat.cdc.v1.CdcEnvelope
-import com.domain.chat.cdc.v1.CdcEnvelope.*
 import shared.Domain.*
 
 final case class ChatState(
@@ -16,7 +15,7 @@ final case class ChatState(
     registeredParticipants: HashSet[Participant] = HashSet.empty[Participant],
     cdc: CdcEnvelope = CdcEnvelope.defaultInstance) { self =>
 
-  def withName(chatName: ChatName, replyTo: ReplyTo) =
+  def withName(chatName: ChatName, replyTo: ReplyTo): ChatState =
     self.copy(
       name = Some(chatName),
       cdc = ChatCreated(chatName, replyTo),
@@ -26,11 +25,12 @@ final case class ChatState(
       newUser: Participant,
       chat: ChatName,
       replyTo: ReplyTo,
-    ) = {
+    ): ChatState = {
     val allUsers = self.registeredParticipants + newUser
     self.copy(
       registeredParticipants = allUsers,
-      cdc = ParticipantAdded(allUsers.mkString(","), chat, replyTo),
+      // cdc = ParticipantAdded(allUsers.mkString(","), chat, replyTo),
+      cdc = ParticipantAddedV2(allUsers.map(_.raw()), chat, replyTo),
     )
   }
 

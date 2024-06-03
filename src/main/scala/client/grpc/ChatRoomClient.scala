@@ -96,10 +96,10 @@ object ChatRoomClient {
         )
       ) ++
         Source
-          .tick(3.second, 2000.millis, ())
+          .tick(3.second, 600.millis, ())
           .zipWithIndex
           .map { case (_, i) => i }
-          .takeWhile(_ < 100)
+          .takeWhile(_ < 150)
           .map { _ =>
 
             // Each time a message is sent, it is encrypted using each participant's public key and send to the server which knows how to broadcast it to the participants.

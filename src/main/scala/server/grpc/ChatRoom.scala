@@ -1,40 +1,41 @@
 package server.grpc
 
 import com.datastax.oss.driver.api.core.uuid.Uuids
-import com.domain.*
 import com.domain.chatRoom.*
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.actor.typed.{ ActorRefResolver, Behavior }
 import org.apache.pekko.cluster.sharding.typed.scaladsl.EntityTypeKey
 import org.apache.pekko.stream.KillSwitch
-import shared.*
 import org.apache.pekko.*
 import org.apache.pekko.actor.typed.*
-import org.apache.pekko.actor.typed.scaladsl.*
 import org.apache.pekko.stream.*
 import org.apache.pekko.stream.scaladsl.*
 import shared.Domain.{ ChatName, ReplyTo }
 import server.grpc.chat.*
-import org.slf4j.Logger
 
 import scala.collection.immutable.HashSet
 import com.domain.chat.{ ChatCmd, * }
 import shared.Domain.*
 import org.apache.pekko.NotUsed
-import org.apache.pekko.actor.typed.scaladsl.adapter.*
+import org.apache.pekko.actor.typed.scaladsl.adapter.TypedActorSystemOps
+import org.apache.pekko.event.LoggingAdapter
+
 import java.util.concurrent.ConcurrentHashMap
+import cluster.sharding.typed.ShardingMessageExtractor
 
 object ChatRoom {
 
   val TypeKey = EntityTypeKey[ChatRoomCmd]("chat-room")
 
-  def shardingMessageExtractor() =
-    new cluster.sharding.typed.ShardingMessageExtractor[ChatRoomCmd, ChatRoomCmd] {
+  def shardingMessageExtractor(): ShardingMessageExtractor[ChatRoomCmd, ChatRoomCmd] =
+    new ShardingMessageExtractor[ChatRoomCmd, ChatRoomCmd] {
       override def entityId(cmd: ChatRoomCmd): String =
         cmd.chat.raw()
       // one entity per chat|shard to isolate rebalancing. We want to rebalance one chat|shard at a time
-      override def shardId(entityId: String): String = entityId
-      override def unwrapMessage(cmd: ChatRoomCmd): ChatRoomCmd = cmd
+      override def shardId(entityId: String): String =
+        entityId
+      override def unwrapMessage(cmd: ChatRoomCmd): ChatRoomCmd =
+        cmd
     }
 
   final case class ChatRoomHub(
@@ -56,10 +57,10 @@ object ChatRoom {
       cassandraSink: Sink[ServerCmd, NotUsed],
     ): Behavior[ChatRoomCmd] =
     Behaviors.setup { ctx =>
+      given sys: ActorSystem[?] = ctx.system
+      given logger: LoggingAdapter = ctx.system.toClassic.log
       given resolver: ActorRefResolver = ActorRefResolver(ctx.system)
       given strRefResolver: stream.StreamRefResolver = stream.StreamRefResolver(ctx.system)
-      given sys: ActorSystem[?] = ctx.system
-      given logger: org.slf4j.Logger = sys.log
       active(ChatRoomState(chat, cassandraSink), chatUserRegion, kss)
     }
 
@@ -71,7 +72,7 @@ object ChatRoom {
       sys: ActorSystem[?],
       resolver: ActorRefResolver,
       strRefResolver: stream.StreamRefResolver,
-      logger: org.slf4j.Logger,
+      logger: LoggingAdapter,
     ): Behavior[ChatRoomCmd] =
     Behaviors.receiveMessage[ChatRoomCmd] {
       case ConnectRequest(chatName, user, otp, replyTo) =>
@@ -99,7 +100,7 @@ object ChatRoom {
             active(state.copy(online = state.online + user), chatUserRegion, kss)
 
           case None =>
-            val ((sink, ks0), src) =
+            val ((sink, ks), src) =
               // TODO: try this https://github.com/haghard/akka-pq/blob/master/src/main/scala/sample/blog/processes/StatefulProcess.scala
               MergeHub
                 .source[ClientCmd](perProducerBufferSize = 1)
@@ -112,7 +113,8 @@ object ChatRoom {
                     CassandraTimeUUID(Uuids.timeBased().toString),
                   )
                 )
-                .log(s"$chatName.hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}")(sys.toClassic.log)
+                // .log(s"$chatName.hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}")(sys.toClassic.log)
+                // .via(StreamMonitor(s"$chatName.grpc-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}"))
                 .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
                 .alsoTo(state.cassandraMergeHubSink)
                 .viaMat(KillSwitches.single)(Keep.both)
@@ -120,7 +122,7 @@ object ChatRoom {
                 // .addAttributes(stream.ActorAttributes.supervisionStrategy { case NonFatal(ex) =>  stream.Supervision.Resume })
                 .run()
 
-            kss.put(chatName, ks0)
+            kss.put(chatName, ks)
             val chatRoomHub = ChatRoomHub(sink, src)
 
             val getRecentHistory =
@@ -141,7 +143,7 @@ object ChatRoom {
               )
             )
             active(
-              state.copy(online = state.online + user, ks = Some(ks0), maybeHub = Some(chatRoomHub)),
+              state.copy(online = state.online + user, ks = Some(ks), maybeHub = Some(chatRoomHub)),
               chatUserRegion,
               kss,
             )

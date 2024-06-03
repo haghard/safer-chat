@@ -1,4 +1,4 @@
-val scala3Version = "3.4.1"
+val scala3Version = "3.4.2"
 val pekkoV = "1.0.2"
 val pekkoHttpV = "1.0.0"
 val ProjectName = "safer-chat"
@@ -119,14 +119,14 @@ lazy val root = project
     javaOptions ++= Seq(
       "-XX:+PrintFlagsFinal",
       "-XX:+PrintCommandLineFlags",
+      "-XshowSettings:system -version",
       //"-XX:+PrintGCDetails",
       //"-XshowSettings:vm",
 
       "-Xms212m",
       "-Xmx256m",
-      "-XshowSettings:system -version",
 
-      "-XX:ThreadStackSize=1048576", //[0 ... 1048576]
+      //"-XX:ThreadStackSize=1048576", //[0 ... 1048576]
       "-XX:ReservedCodeCacheSize=251658240",
       "-XX:MaxDirectMemorySize=128m",
 
