@@ -2,7 +2,7 @@ package server.grpc
 
 import com.datastax.oss.driver.api.core.uuid.Uuids
 import com.domain.chatRoom.*
-import org.apache.pekko.actor.typed.scaladsl.Behaviors
+import org.apache.pekko.actor.typed.scaladsl.{ ActorContext, Behaviors }
 import org.apache.pekko.actor.typed.{ ActorRefResolver, Behavior }
 import org.apache.pekko.cluster.sharding.typed.scaladsl.EntityTypeKey
 import org.apache.pekko.stream.KillSwitch
@@ -17,15 +17,13 @@ import scala.collection.immutable.HashSet
 import com.domain.chat.{ ChatCmd, * }
 import shared.Domain.*
 import org.apache.pekko.NotUsed
-import org.apache.pekko.actor.typed.scaladsl.adapter.TypedActorSystemOps
-import org.apache.pekko.event.LoggingAdapter
 
 import java.util.concurrent.ConcurrentHashMap
 import cluster.sharding.typed.ShardingMessageExtractor
 
-object ChatRoom {
+object ChatRoomSession {
 
-  val TypeKey = EntityTypeKey[ChatRoomCmd]("chat-room")
+  val TypeKey = EntityTypeKey[ChatRoomCmd]("chat-session")
 
   def shardingMessageExtractor(): ShardingMessageExtractor[ChatRoomCmd, ChatRoomCmd] =
     new ShardingMessageExtractor[ChatRoomCmd, ChatRoomCmd] {
@@ -57,27 +55,28 @@ object ChatRoom {
       cassandraSink: Sink[ServerCmd, NotUsed],
     ): Behavior[ChatRoomCmd] =
     Behaviors.setup { ctx =>
-      given sys: ActorSystem[?] = ctx.system
-      given logger: LoggingAdapter = ctx.system.toClassic.log
       given resolver: ActorRefResolver = ActorRefResolver(ctx.system)
       given strRefResolver: stream.StreamRefResolver = stream.StreamRefResolver(ctx.system)
+      given ac: ActorContext[ChatRoomCmd] = ctx
       active(ChatRoomState(chat, cassandraSink), chatUserRegion, kss)
     }
 
   def active(
       state: ChatRoomState,
-      chatUserRegion: ActorRef[ChatCmd],
+      chatRegion: ActorRef[ChatCmd],
       kss: ConcurrentHashMap[ChatName, KillSwitch],
     )(using
-      sys: ActorSystem[?],
       resolver: ActorRefResolver,
       strRefResolver: stream.StreamRefResolver,
-      logger: LoggingAdapter,
+      ctx: ActorContext[ChatRoomCmd],
     ): Behavior[ChatRoomCmd] =
     Behaviors.receiveMessage[ChatRoomCmd] {
       case ConnectRequest(chatName, user, otp, replyTo) =>
-        logger.info("ConnectRequest from {}. Online: [{}]", user.raw(), state.online.mkString(","))
+        // import org.apache.pekko.actor.typed.scaladsl.LoggerOps
+        // logger.info2("{}: Chat({}) already exists", ctx.self.path, chat.raw())
+        ctx.log.info("Connection request from User({}). Online: [{}]", user.raw(), state.online.mkString(","))
         val replyTo0 = ReplyTo[ChatReply].toBase(replyTo)
+        given sys: ActorSystem[?] = ctx.system
         state.maybeHub match {
           case Some(hub) =>
             val getRecentHistory =
@@ -96,8 +95,8 @@ object ChatRoom {
                 sinkRefStr = strRefResolver.toSerializationFormat(sinkRef),
               )
             )
-            // TODO: log session user, otp,
-            active(state.copy(online = state.online + user), chatUserRegion, kss)
+            ctx.log.info("User({}) Start session:{}", user.raw(), otp.raw())
+            active(state.copy(online = state.online + user), chatRegion, kss)
 
           case None =>
             val ((sink, ks), src) =
@@ -142,24 +141,26 @@ object ChatRoom {
                 sinkRefStr = strRefResolver.toSerializationFormat(sinkRef),
               )
             )
+
+            ctx.log.info(s"User({}). Start session:{}", user.raw(), otp.raw())
             active(
               state.copy(online = state.online + user, ks = Some(ks), maybeHub = Some(chatRoomHub)),
-              chatUserRegion,
+              chatRegion,
               kss,
             )
         }
 
-      case Disconnect(user, chat, otp) =>
-        val updated = state.online - user
-        logger.info(s"Disconnect: $user - Online: [${state.online.mkString(",")}]")
-        if (updated.isEmpty) {
+      case Disconnect(user, chatName, otp) =>
+        val updatedOnlineUsers = state.online - user
+        ctx.log.info(s"User({}). End session:{}", user.raw(), otp.raw())
+        if (updatedOnlineUsers.isEmpty) {
           state.ks.foreach(_.shutdown())
-          Option(kss.remove(chat)).foreach(_.shutdown())
-          logger.info("★ ★ ★ Stopped: {} ★ ★ ★", state.chatName)
-          chatUserRegion.tell(StopChatEntity(chat))
+          Option(kss.remove(chatName)).foreach(_.shutdown())
+          ctx.log.info("★ ★ ★ Passivate chat-room: {} ★ ★ ★", state.chatName)
+          chatRegion.tell(StopChatEntity(chatName))
           Behaviors.stopped
         } else {
-          active(state.copy(online = updated), chatUserRegion, kss)
+          active(state.copy(online = updatedOnlineUsers), chatRegion, kss)
         }
     }
 }

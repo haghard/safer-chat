@@ -128,7 +128,7 @@ final class ChatRoomApi(
                       case CmdTag.PUT =>
                         Future.successful(Seq(cmd))
                       case CmdTag.GET =>
-                        CassandraStore.readRecentHistory(cmd, getRecentTimeLime)
+                        CassandraStore.getRecentHistory(cmd, getRecentTimeLime)
                       case CmdTag.Unrecognized(un) =>
                         Future.failed(new Exception(s"Unknown CmdTag($un)"))
                     }

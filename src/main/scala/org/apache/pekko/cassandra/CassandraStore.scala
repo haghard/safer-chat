@@ -95,7 +95,7 @@ object CassandraStore {
         throw ex
     }
 
-  def readRecentHistory(
+  def getRecentHistory(
       cmd: ServerCmd,
       getRecent: PreparedStatement,
       limit: Int = 15,
@@ -211,14 +211,14 @@ object CassandraStore {
 
   def printStats(
       msg: String,
-      log: LoggingAdapter,
       duration: FiniteDuration,
+    )(using log: LoggingAdapter
     ): Sink[Seq[ServerCmd], NotUsed] =
     Flow[Seq[ServerCmd]]
       .conflateWithSeed(_.size)((sum, batch) => sum + batch.size)
       .zipWith(Source.tick(duration, duration, ()))(Keep.left)
       .scan(0L)((acc, c) => acc + c)
-      .to(Sink.foreach(cnt => log.warning(s" ★ ★ ★ ★ $msg Num-of-msgs:$cnt")))
+      .to(Sink.foreach(cnt => log.warning(s" ★ ★ ★ ★ $msg NumOfMsg:$cnt")))
       .withAttributes(Attributes.inputBuffer(1, 1))
 
   def mkSink(using system: ActorSystem[?]): (Sink[ServerCmd, NotUsed], KillSwitch) = {
@@ -247,10 +247,10 @@ object CassandraStore {
       .source[ServerCmd](perProducerBufferSize = 1)
       // .log("cassandra-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}")(logger)
       .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
-      .via(StreamMonitor("cas-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}"))
+      .via(StreamMonitor("chub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}"))
       .viaMat(KillSwitches.single)(Keep.both)
-      .groupedWithin(maxBatchSize, 500.millis)
-      .wireTap(printStats("CassandraStore/stats:", logger, 30.seconds))
+      .groupedWithin(maxBatchSize, 150.millis)
+      .wireTap(printStats("CassandraSink.stats:", 30.seconds))
       .to(
         Sink.foreachAsync(1) { (batch: Seq[ServerCmd]) =>
           Future
@@ -418,8 +418,8 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
                 CassandraStore.updateChatDetails(cqlSession, revision, chatCreated, writeDetails)
               case SealedValue.Added(participantAdded) =>
                 CassandraStore.updateChatDetails(cqlSession, revision, participantAdded, writeDetails)
-              case SealedValue.AddedV2(participantAdded) =>
-                CassandraStore.updateChatDetails(cqlSession, revision, participantAdded, writeDetails)
+              case SealedValue.AddedV2(participantAddedV2) =>
+                CassandraStore.updateChatDetails(cqlSession, revision, participantAddedV2, writeDetails)
               case SealedValue.Empty =>
                 Future.failed(new Exception(s"Unsupported cdc.SealedValue.Empty"))
             }

@@ -193,7 +193,7 @@ object Chat {
       case StopChatEntity(chatName) =>
         Effect
           .none[ChatState]
-          .thenRun(_ => logger.info("Passivate: {} ★ ★ ★", chatName))
+          .thenRun(_ => logger.info("Passivate chat: {} ★ ★ ★", chatName))
           .thenStop()
     }
   }

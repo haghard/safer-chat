@@ -124,8 +124,8 @@ object Guardian {
 
             val chatRoomRegion: ActorRef[ChatRoomCmd] =
               sharding.init(
-                Entity(ChatRoom.TypeKey)(entityCtx =>
-                  ChatRoom(ChatName(entityCtx.entityId), chatUserRegion, kss, cassandraSink)
+                Entity(ChatRoomSession.TypeKey)(entityCtx =>
+                  ChatRoomSession(ChatName(entityCtx.entityId), chatUserRegion, kss, cassandraSink)
                 )
                   .withSettings(
                     ClusterShardingSettings(sys)
@@ -137,7 +137,7 @@ object Guardian {
                           .withIdleEntityPassivation(30.seconds)
                       )
                   )
-                  .withMessageExtractor(ChatRoom.shardingMessageExtractor())
+                  .withMessageExtractor(ChatRoomSession.shardingMessageExtractor())
                   .withAllocationStrategy(allocationStrategy)
               )
 
