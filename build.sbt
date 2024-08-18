@@ -1,6 +1,7 @@
 val scala3Version = "3.4.2"
 val pekkoV = "1.0.3"
 val pekkoHttpV = "1.0.0"
+ val PekkoManagementVersion = "1.0.0"
 val ProjectName = "safer-chat"
 
 val AmmoniteVersion = "3.0.0-M2-9-88291dd8"
@@ -66,8 +67,9 @@ lazy val root = project
       "org.apache.pekko" %% "pekko-persistence-typed" % pekkoV,
       "org.apache.pekko" %% "pekko-stream-typed" % pekkoV,
 
-      "org.apache.pekko" %% "pekko-management" % "1.0.0",
-      "org.apache.pekko" %% "pekko-management-cluster-bootstrap" % "1.0.0",
+      "org.apache.pekko" %% "pekko-management" % PekkoManagementVersion,
+      "org.apache.pekko" %% "pekko-management-cluster-bootstrap" % PekkoManagementVersion,
+      "org.apache.pekko" %% "pekko-management-cluster-http" % PekkoManagementVersion,
 
       //protobuf-java-3.21.12.jar, jar org = com.google.protobuf, entry target = google/protobuf/struct.proto
 

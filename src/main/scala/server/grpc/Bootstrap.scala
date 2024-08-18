@@ -10,8 +10,8 @@ import org.apache.pekko
 import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.cassandra.{ CassandraSessionExtension, CassandraStore }
 import shared.AppConfig
-
 import shared.*
+
 import scala.jdk.CollectionConverters.*
 
 object Bootstrap {
@@ -30,6 +30,17 @@ object Bootstrap {
     }
 
     pekko.management.scaladsl.PekkoManagement(system).start()
+
+    //http 127.0.0.1:8558/cluster/members "Authorization:Basic QWxhZGRpbjpPcGVuU2VzYW1l"
+    /*management.start(_.withAuth({ (credentials: Credentials) =>
+      credentials match {
+        case p @ Credentials.Provided(id) =>
+          Future.successful { if ((id == "Aladdin") && p.verify("OpenSesame")) Some(id) else None }
+        case _ =>
+          Future.successful(None)
+      }
+    }))*/
+
     pekko.management.cluster.bootstrap.ClusterBootstrap(system).start()
     // pekko.discovery.Discovery(system).loadServiceDiscovery("config")
 
