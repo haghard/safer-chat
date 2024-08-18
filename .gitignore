@@ -33,3 +33,4 @@ metals.sbt
 /logs/
 /server.keystore
 /safer-chat.keystore
+/ks/

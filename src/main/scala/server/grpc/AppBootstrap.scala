@@ -38,25 +38,23 @@ object AppBootstrap {
     val certPath = "/fsa/fullchain.pem"
     val privateKey = DERPrivateKeyLoader.load(PEMDecoder.decode(scala.io.Source.fromResource(keyPath).mkString))
     val fact = CertificateFactory.getInstance("X.509")
-    val cer = fact.generateCertificate(classOf[AppBootstrap.type].getResourceAsStream(certPath))
-    log.info(s"$cer")
+    val certificate = fact.generateCertificate(classOf[AppBootstrap.type].getResourceAsStream(certPath))
+    log.info(s"$certificate")
+
+    //
+    val jksPsw = "123456".toCharArray
 
     val ks = KeyStore.getInstance("PKCS12")
     ks.load(null)
-    ks.setKeyEntry(
-      "private",
-      privateKey,
-      new Array[Char](0),
-      Array[Certificate](cer),
-    )
+    ks.setKeyEntry("safer-chat-pk", privateKey, jksPsw, Array[Certificate](certificate))
 
-    val out = new FileOutputStream("./safer-chat.keystore")
-    ks.store(out, new Array[Char](0))
+    val out = new FileOutputStream("./ks/safer-chat.jks")
+    ks.store(out, jksPsw)
     out.flush()
     out.close()
 
     val keyManagerFactory = KeyManagerFactory.getInstance("SunX509")
-    keyManagerFactory.init(ks, Array[Char]())
+    keyManagerFactory.init(ks, jksPsw)
 
     val context = SSLContext.getInstance("TLS")
     context.init(keyManagerFactory.getKeyManagers, null, new SecureRandom())
