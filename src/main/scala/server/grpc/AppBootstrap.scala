@@ -16,18 +16,52 @@ import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.cassandra.CassandraSessionExtension
 import org.apache.pekko.http.scaladsl.*
 import org.apache.pekko.http.scaladsl.model.*
-//import org.apache.pekko.management.cluster.scaladsl.ClusterHttpManagementRoutes
+import org.apache.pekko.pki.pem.{ DERPrivateKeyLoader, PEMDecoder }
+
+import java.io.FileOutputStream
+import java.security.{ KeyStore, SecureRandom }
+import java.security.cert.Certificate
+import javax.net.ssl.{ KeyManagerFactory, SSLContext }
 import org.apache.pekko.management.scaladsl.PekkoManagement
 import org.apache.pekko.stream.KillSwitch
-//import org.apache.pekko.stream.snapshot.MaterializerState
-//import org.apache.pekko.actor.typed.scaladsl.adapter.TypedActorSystemOps
 import shared.AppConfig
 import shared.Domain.ChatName
 import shared.*
+import java.security.cert.CertificateFactory
 
 object AppBootstrap {
 
   case object BindFailure extends Reason
+
+  def serverHttpContext(log: org.slf4j.Logger): HttpsConnectionContext = {
+    val keyPath = "fsa/privkey.key"
+    val certPath = "/fsa/fullchain.pem"
+    val privateKey = DERPrivateKeyLoader.load(PEMDecoder.decode(scala.io.Source.fromResource(keyPath).mkString))
+    val fact = CertificateFactory.getInstance("X.509")
+    val cer = fact.generateCertificate(classOf[AppBootstrap.type].getResourceAsStream(certPath))
+    log.info(s"$cer")
+
+    val ks = KeyStore.getInstance("PKCS12")
+    ks.load(null)
+    ks.setKeyEntry(
+      "private",
+      privateKey,
+      new Array[Char](0),
+      Array[Certificate](cer),
+    )
+
+    val out = new FileOutputStream("./safer-chat.keystore")
+    ks.store(out, new Array[Char](0))
+    out.flush()
+    out.close()
+
+    val keyManagerFactory = KeyManagerFactory.getInstance("SunX509")
+    keyManagerFactory.init(ks, Array[Char]())
+
+    val context = SSLContext.getInstance("TLS")
+    context.init(keyManagerFactory.getKeyManagers, null, new SecureRandom())
+    ConnectionContext.httpsServer(context)
+  }
 
   def apply(
       appCfg: AppConfig,
@@ -46,6 +80,7 @@ object AppBootstrap {
 
     Http()(sys)
       .newServerAt(host, port)
+      .enableHttps(serverHttpContext(sys.log))
       .bind(grpcService)
       .onComplete {
         case Failure(ex) =>
@@ -60,7 +95,10 @@ object AppBootstrap {
                |""".stripMargin)
 
           // https://github.com/nolangrace/akka-playground/blob/d5459a555c78fbcf886f1ef38b0011abde47cd33/src/main/scala/com/example/AkkaStreamsMaterializerState.scala#L58
-          /*MaterializerState.streamSnapshots(sys.toClassic).onComplete { snap =>
+          /*
+          import org.apache.pekko.stream.snapshot.MaterializerState
+          import org.apache.pekko.actor.typed.scaladsl.adapter.TypedActorSystemOps
+          MaterializerState.streamSnapshots(sys.toClassic).onComplete { snap =>
             snap.map { interpreters =>
               interpreters.map { streamSn =>
                 streamSn.activeInterpreters.map { interpreters =>

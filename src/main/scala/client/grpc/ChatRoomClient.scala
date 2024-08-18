@@ -37,7 +37,8 @@ object ChatRoomClient {
   val Ottawa = server.grpc.chat.Coords(45.41875, -75.70144560830724)
   val Toronto = server.grpc.chat.Coords(43.911806, -80.099738)
   val chatName = ChatName("aaa") // bbb
-  sys.props += "APP_VERSION_VAR" -> server.grpc.BuildInfo.version
+  sys.props += "APP_VERSION" -> server.grpc.BuildInfo.version
+  sys.props += "SERVER_HOSTNAME" -> "127.0.0.2"
 
   // https://github.com/bcgit/bc-java/blob/main/core/src/test/java/org/bouncycastle/crypto/test/Ed25519Test.java
   // import org.bouncycastle.math.ec.rfc8032.Ed25519

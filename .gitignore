@@ -31,3 +31,5 @@ metals.sbt
 .idea_modules
 /.worksheet/
 /logs/
+/server.keystore
+/safer-chat.keystore
