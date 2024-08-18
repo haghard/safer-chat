@@ -1,9 +1,12 @@
 val scala3Version = "3.4.2"
-val pekkoV = "1.0.2"
+val pekkoV = "1.0.3"
 val pekkoHttpV = "1.0.0"
 val ProjectName = "safer-chat"
 
+val AmmoniteVersion = "3.0.0-M2-9-88291dd8"
 resolvers += "Apache Snapshots" at "https://repository.apache.org/content/repositories/snapshots/"
+
+val AppVersion = "0.0.2"
 
 //show scalacOptions
 lazy val scalac3Settings = Seq(
@@ -33,7 +36,7 @@ lazy val root = project
   .settings(
     name := ProjectName,
     organization := "haghard",
-    version := "0.0.1-SNAPSHOT",
+    version := AppVersion,
     scalaVersion := scala3Version,
     startYear := Some(2024),
     developers := List(Developer("haghard", "Vadim Bondarev", "hagard84@gmail.com", url("https://github.com/haghard"))),
@@ -57,7 +60,8 @@ lazy val root = project
       */
       "org.apache.pekko" %% "pekko-protobuf-v3" % pekkoV,
       "org.apache.pekko" %% "pekko-actor-typed" % pekkoV,
-      "org.apache.pekko" %% "pekko-cluster-sharding-typed" % pekkoV,
+      ("org.apache.pekko" %% "pekko-cluster-sharding-typed" % pekkoV),
+        //.excludeAll(ExclusionRule(organization = "org.apache.pekko", name = "pekko-protobuf-v3")),
       "org.apache.pekko" %% "pekko-distributed-data" % pekkoV,
       "org.apache.pekko" %% "pekko-persistence-typed" % pekkoV,
       "org.apache.pekko" %% "pekko-stream-typed" % pekkoV,
@@ -65,22 +69,48 @@ lazy val root = project
       "org.apache.pekko" %% "pekko-management" % "1.0.0",
       "org.apache.pekko" %% "pekko-management-cluster-bootstrap" % "1.0.0",
 
-      "ch.qos.logback" % "logback-classic" % "1.2.11", //"1.4.14"
+      //protobuf-java-3.21.12.jar, jar org = com.google.protobuf, entry target = google/protobuf/struct.proto
 
+      //https://pekko.apache.org/docs/pekko-persistence-r2dbc/current/query.html#publish-events-for-lower-latency-of-eventsbyslices
+      //"org.apache.pekko" %% "pekko-persistence-r2dbc" % "1.0.0",
+
+      "ch.qos.logback" % "logback-classic" % "1.2.11",
       "org.apache.pekko" %% "pekko-slf4j" % pekkoV,
 
       "com.madgag.spongycastle" % "core" % "1.58.0.0",
       "org.bouncycastle" % "bcpkix-jdk18on" % "1.78.1",
 
+      //https://tarao.orezdnu.org/record4s/
+      "com.github.tarao" %% "record4s" % "0.13.0",
+
       "io.aeron" % "aeron-driver" % "1.44.1",
       "io.aeron" % "aeron-client" % "1.44.1",
 
-      "org.wvlet.airframe" %% "airframe-ulid" % "24.5.0",
+      "org.wvlet.airframe" %% "airframe-ulid" % "24.7.1",
       "com.github.bastiaanjansen" % "otp-java" % "2.0.3",
       "com.datastax.oss" % "java-driver-core" % "4.17.0",
+
+      ("com.lihaoyi" % "ammonite" % AmmoniteVersion % "test" cross CrossVersion.full)
+        .exclude("com.thesamet.scalapb", "lenses_2.13")
+        .exclude("com.thesamet.scalapb", "scalapb-runtime_2.13"),
+
+      //https://github.com/scalag/scalag/blob/master/build.sbt
+      //https://github.com/dialex/JColor
+      "com.lihaoyi" % "pprint_3" % "0.9.0",
+      "com.diogonunes" % "JColor" % "5.5.1",
     ),
 
-    // dependencyOverrides ++= Seq(),
+    dependencyOverrides ++= Seq(
+      "org.apache.pekko" %% "pekko-discovery" % pekkoV,
+      "org.apache.pekko" %% "pekko-protobuf-v3" % pekkoV,
+      "org.apache.pekko" %% "pekko-actor-typed" % pekkoV,
+      "org.apache.pekko" %% "pekko-cluster-sharding-typed" % pekkoV,
+      "org.apache.pekko" %% "pekko-distributed-data" % pekkoV,
+      "org.apache.pekko" %% "pekko-persistence-typed" % pekkoV,
+      "org.apache.pekko" %% "pekko-stream-typed" % pekkoV,
+      "org.apache.pekko" %% "pekko-management" % "1.0.0",
+      "org.apache.pekko" %% "pekko-management-cluster-bootstrap" % "1.0.0",
+    ),
     assemblyMergeStrategy := {
       case PathList("META-INF", xs @ _*)                                  => MergeStrategy.discard
       case PathList(xs @ _*) if xs.last == "module-info.class"            => MergeStrategy.discard
@@ -88,10 +118,13 @@ lazy val root = project
       case "application.conf"                                             => MergeStrategy.concat
       case "version.conf"                                                 => MergeStrategy.concat
       case "reference.conf"                                               => MergeStrategy.concat
+      // https://github.com/akka/akka/issues/29456
+      case PathList("google", "protobuf", _)    => MergeStrategy.discard
+      case PathList("google", "protobuf", _, _) => MergeStrategy.discard
       case other                                                          =>
-        // (assembly / assemblyMergeStrategy).value(other)
-        MergeStrategy.first
+        (assembly / assemblyMergeStrategy).value(other)
     },
+
     mainClass := Some("Main"),
     assemblyJarName := s"$ProjectName-${version.value}.jar",
     // java.base/sun.nio.ch=ALL-UNNAMED
@@ -112,7 +145,7 @@ lazy val root = project
       "gitBranch" -> SbtUtils.branch.getOrElse(""),
     ),
     dynverSeparator := "-",
-    // scalaBinaryVersion := "3", //"2.13"
+    //scalaBinaryVersion := "3", //"2.13"
 
     // make version compatible with docker for publishing
     ThisBuild / dynverSeparator := "-",
@@ -170,16 +203,22 @@ lazy val root = project
       */
     ),
 
-    // comment out for test:run
+    //comment out for test:run
     run / fork := true,
     run / connectInput := true,
-    //run / javaOptions ++= unnamedJavaOptions
   )
   .enablePlugins(PekkoGrpcPlugin, JavaAppPackaging, BuildInfoPlugin)
 
 shellPrompt := { state => s"${SbtUtils.prompt(ProjectName)}> " }
 
 scalafmtOnCompile := true
+
+Test / sourceGenerators += Def.task {
+  val file = (Test / sourceManaged).value / "amm.scala"
+  IO.write(file, """object amm extends App { ammonite.Main().run() }""")
+  Seq(file)
+}.taskValue
+
 
 addCommandAlias("c", "scalafmt;compile")
 addCommandAlias("r", "reload")
@@ -204,7 +243,7 @@ val unnamedJavaOptions = List(
   "--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED"
 )
 
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 ./target/scala-3.4.1/safer-chat-0.0.1-SNAPSHOT.jar
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 ./target/scala-3.4.1/safer-chat-0.0.1-SNAPSHOT.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 ./target/scala-3.4.2/safer-chat-0.0.2.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 ./target/scala-3.4.2/safer-chat-0.0.2.jar
 
 //show dependencyList

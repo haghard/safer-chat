@@ -24,7 +24,7 @@ import com.domain.chat.cdc.v1.CdcEnvelopeMessage.SealedValue
 import org.apache.pekko.event.LoggingAdapter
 import server.grpc.chat.ServerCmd
 import server.grpc.state.ChatState
-import server.grpc.{ Chat, StreamMonitor }
+import server.grpc.{ ChatRoom, StreamMonitor, ThroughputMonitor }
 
 import scala.collection.immutable.HashSet
 import scala.concurrent.*
@@ -218,10 +218,10 @@ object CassandraStore {
       .conflateWithSeed(_.size)((sum, batch) => sum + batch.size)
       .zipWith(Source.tick(duration, duration, ()))(Keep.left)
       .scan(0L)((acc, c) => acc + c)
-      .to(Sink.foreach(cnt => log.warning(s" ★ ★ ★ ★ $msg NumOfMsg:$cnt")))
+      .to(Sink.foreach(cnt => log.warning(s" ★ ★ ★ ★ $msg NumOfMsg:$cnt in last $duration")))
       .withAttributes(Attributes.inputBuffer(1, 1))
 
-  def mkSink(using system: ActorSystem[?]): (Sink[ServerCmd, NotUsed], KillSwitch) = {
+  def mkCassandraSink(memberDetails: String)(using system: ActorSystem[?]): (Sink[ServerCmd, NotUsed], KillSwitch) = {
     val classicSystem: org.apache.pekko.actor.ActorSystem = system.toClassic
     given logger: LoggingAdapter = classicSystem.log
     given sch: Scheduler = classicSystem.scheduler
@@ -250,7 +250,13 @@ object CassandraStore {
       .via(StreamMonitor("chub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}"))
       .viaMat(KillSwitches.single)(Keep.both)
       .groupedWithin(maxBatchSize, 150.millis)
-      .wireTap(printStats("CassandraSink.stats:", 30.seconds))
+      // .wireTap(printStats("CassandraSink.stats:", 30.seconds))
+      .via(
+        ThroughputMonitor(
+          30.seconds,
+          state => logger.warning(s"throughput($memberDetails):${state.throughput()}"),
+        )
+      )
       .to(
         Sink.foreachAsync(1) { (batch: Seq[ServerCmd]) =>
           Future
@@ -313,6 +319,17 @@ object CassandraStore {
       |);
       |""".stripMargin
 
+  val chatDetailsTable3 =
+    """
+      |CREATE TYPE user(login text,firstname text,lastname text);
+      |CREATE TABLE IF NOT EXISTS chat_details2(
+      |   chat text,
+      |   revision bigint,
+      |   participants set<frozen<user>>,
+      |   PRIMARY KEY (chat)
+      |);
+      |""".stripMargin
+
   val chatTimelineTable =
     """
       |CREATE TABLE IF NOT EXISTS timeline (
@@ -371,7 +388,7 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
   import system.dispatcher
 
   override def scaladslDurableStateStore(): DurableStateStore[Any] =
-    new DurableStateUpdateStore[Chat.State]() {
+    new DurableStateUpdateStore[ChatRoom.State]() {
       val writeParallelism = system.settings.config.getInt("cassandra.parallelism")
 
       given typedSystem: ActorSystem[?] = system.toTyped
@@ -434,7 +451,7 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
         .runWith(Sink.ignore)
 
       def insert(
-          state: Chat.State,
+          state: ChatRoom.State,
           chatName: ChatName,
           revision: Long,
         ): Future[Done] =
@@ -460,12 +477,12 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
       override def upsertObject(
           chatName: String,
           revision: Long,
-          state: Chat.State,
+          state: ChatRoom.State,
           tag: String,
         ): Future[org.apache.pekko.Done] =
         insert(state, ChatName(chatName), revision)
 
-      override def getObject(chat: String): Future[GetObjectResult[Chat.State]] =
+      override def getObject(chat: String): Future[GetObjectResult[ChatRoom.State]] =
         cqlSession
           .executeAsync(getDetailsRevision.bind(chat))
           .asScala

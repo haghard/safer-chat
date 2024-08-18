@@ -23,7 +23,7 @@ import cluster.sharding.typed.ShardingMessageExtractor
 
 object ChatRoomSession {
 
-  val TypeKey = EntityTypeKey[ChatRoomCmd]("chat-session")
+  val TypeKey = EntityTypeKey[ChatRoomCmd]("session")
 
   def shardingMessageExtractor(): ShardingMessageExtractor[ChatRoomCmd, ChatRoomCmd] =
     new ShardingMessageExtractor[ChatRoomCmd, ChatRoomCmd] {
@@ -103,6 +103,9 @@ object ChatRoomSession {
               // TODO: try this https://github.com/haghard/akka-pq/blob/master/src/main/scala/sample/blog/processes/StatefulProcess.scala
               MergeHub
                 .source[ClientCmd](perProducerBufferSize = 1)
+                .mapMaterializedValue { sink =>
+                  ctx.log.info(s"MergeHub($chatName) materialization"); sink
+                }
                 // .throttle(128, 1.second, 128, ThrottleMode.shaping)
                 .map(clientCmd =>
                   ServerCmd(
@@ -117,7 +120,13 @@ object ChatRoomSession {
                 .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
                 .alsoTo(state.cassandraMergeHubSink)
                 .viaMat(KillSwitches.single)(Keep.both)
-                .toMat(BroadcastHub.sink[ServerCmd](bufferSize = 1))(Keep.both)
+                .toMat(
+                  BroadcastHub
+                    .sink[ServerCmd](bufferSize = 1)
+                    .mapMaterializedValue { src =>
+                      ctx.log.info("BroadcastHub($chatName) materialization"); src
+                    }
+                )(Keep.both)
                 // .addAttributes(stream.ActorAttributes.supervisionStrategy { case NonFatal(ex) =>  stream.Supervision.Resume })
                 .run()
 
@@ -131,9 +140,9 @@ object ChatRoomSession {
                 tag = server.grpc.chat.CmdTag.GET,
               )
 
-            val srcRef =
-              (Source.single(getRecentHistory) ++ chatRoomHub.src).runWith(StreamRefs.sourceRef[ServerCmd]())
+            val srcRef = (Source.single(getRecentHistory) ++ chatRoomHub.src).runWith(StreamRefs.sourceRef[ServerCmd]())
             val sinkRef = chatRoomHub.sink.runWith(StreamRefs.sinkRef[ClientCmd]())
+
             replyTo0.tell(
               ChatReply(
                 chat = chatName,

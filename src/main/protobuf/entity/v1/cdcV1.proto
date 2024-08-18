@@ -8,7 +8,9 @@ package com.domain.chat.cdc.v1;
 
 message CdcEnvelope {
 
+  // The name `sealed_value` is important, because it leads to specialized Scala code generation!
   //Another option is sealed_value_optional
+  //sealed_value
   oneof sealed_value {
     ChatCreated created = 1;
     ParticipantAdded added = 2 [deprecated = true];
@@ -32,4 +34,15 @@ message ParticipantAddedV2 {
   repeated string participants = 1 [(scalapb.field).collection_type = "scala.collection.immutable.Set" ];
   string chat = 2 [(scalapb.field).type = "shared.Domain.ChatName"];
   string replyTo = 3 [(scalapb.field).type = "shared.Domain.ReplyTo"];
+}
+
+
+
+message CdcEnvelope2 {
+  
+  oneof value {
+    ChatCreated created = 1;
+    ParticipantAdded added = 2 [deprecated = true];
+    ParticipantAddedV2 addedV2 = 3;
+  }
 }

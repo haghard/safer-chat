@@ -37,6 +37,11 @@ object ChatRoomClient {
   val Ottawa = server.grpc.chat.Coords(45.41875, -75.70144560830724)
   val Toronto = server.grpc.chat.Coords(43.911806, -80.099738)
   val chatName = ChatName("aaa") // bbb
+  sys.props += "APP_VERSION_VAR" -> server.grpc.BuildInfo.version
+
+  // https://github.com/bcgit/bc-java/blob/main/core/src/test/java/org/bouncycastle/crypto/test/Ed25519Test.java
+  // import org.bouncycastle.math.ec.rfc8032.Ed25519
+  // Ed25519.Algorithm.Ed25519
 
   val cnt = new AtomicInteger(0)
 
@@ -53,7 +58,7 @@ object ChatRoomClient {
 
   def postMessages(
       user: ChatUser,
-      historyUsr: ChatUser,
+      defaultUsr: ChatUser,
       appConf: AppConfig,
       userName: String,
       userPubKeys: java.util.concurrent.ConcurrentHashMap[String, java.security.interfaces.RSAPublicKey],
@@ -64,23 +69,23 @@ object ChatRoomClient {
     ): Future[Done] = {
 
     logger.warn(s"Performing streaming requests: $userName/${user.handle.toString}")
-    val TOTPGen = new TOTPGenerator.Builder(appConf.secretToken.getBytes(StandardCharsets.UTF_8) ++ user.handle.bytes)
-      .withHOTPGenerator { b =>
-        b.withPasswordLength(8)
-        b.withAlgorithm(HMACAlgorithm.SHA256)
-      }
-      .withPeriod(Duration.ofSeconds(10))
-      .build()
+    val TOTPGen =
+      new TOTPGenerator.Builder(appConf.secretToken.getBytes(StandardCharsets.UTF_8) ++ user.handle.bytes) // ++nonce
+        .withHOTPGenerator { b =>
+          b.withPasswordLength(8)
+          b.withAlgorithm(HMACAlgorithm.SHA256)
+        }
+        .withPeriod(Duration.ofSeconds(10))
+        .build()
 
     /*
       One Time Password (OTP)
       A One Time Password is a form of authentication that is used to grant access to a single login session.
       It requires two inputs, a static value known as a secret key and a moving factor which changes each time an OTP value is generated.
-      I use user.handle as a secret key.
+      I use user.handle+salt as a secret key.
      */
     val otp = TOTPGen.now()
 
-    // val requests: Source[ClientCmd, Cancellable] =
     val requests: Source[ClientCmd, NotUsed] =
       // auth message
       Source.single(
@@ -96,7 +101,7 @@ object ChatRoomClient {
         )
       ) ++
         Source
-          .tick(3.second, 600.millis, ())
+          .tick(3.second, 1000.millis, ())
           .zipWithIndex
           .map { case (_, i) => i }
           .takeWhile(_ < 150)
@@ -130,7 +135,7 @@ object ChatRoomClient {
       client.post(requests)
 
     val done: Future[Done] =
-      responseStream.runForeach(onMsg(_, user, historyUsr, userPubKeys))
+      responseStream.runForeach(onMsg(_, user, defaultUsr, userPubKeys))
 
     done
   }
@@ -200,7 +205,10 @@ object ChatRoomClient {
     given grpcClient: server.grpc.chat.ChatRoomClient =
       server.grpc.chat.ChatRoomClient(GrpcClientSettings.fromConfig("server.grpc.ChatRoom").withUserAgent(userName))
 
-    ChatUser.generate()
+    /*
+    val u = ChatUser.generate()
+    ChatUser.backup(u, "filename.txt")
+     */
 
     val chatUsr: ChatUser =
       ChatUser
@@ -216,13 +224,12 @@ object ChatRoomClient {
     userPubKeys.put(defaultUsr.handle.toString, defaultUsr.pub)
 
     val done = postMessages(chatUsr, defaultUsr, appConf, userName, userPubKeys)
-    done.onComplete { r =>
-      println("Exit: " + r)
+    done.onComplete { code =>
+      println(s"Exit: $code")
       grpcClient.close().onComplete { _ =>
         sys.log.warn(s"========= Participants =========")
         userPubKeys.keySet().forEach(key => sys.log.warn(s"User($key)"))
         sys.log.warn(s"========= Participants =========")
-
         sys.log.warn(s"★ ★ ★ ★ ★ ★  Completed($userName) ★ ★ ★ ★ ★ ★")
         sys.terminate()
       }

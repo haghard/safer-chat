@@ -6,15 +6,13 @@ package server.grpc
 package api
 
 import com.datastax.oss.driver.api.core.CqlSession
-import com.datastax.oss.driver.api.core.cql.SimpleStatement
+import com.datastax.oss.driver.api.core.cql.{ PreparedStatement, SimpleStatement }
 
 import scala.concurrent.*
 import scala.concurrent.duration.*
 import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.Logger
 import org.apache.pekko.*
-import org.apache.pekko.actor.CoordinatedShutdown
-import org.apache.pekko.actor.CoordinatedShutdown.*
 import org.apache.pekko.actor.typed.*
 import org.apache.pekko.stream.*
 import org.apache.pekko.stream.scaladsl.*
@@ -40,7 +38,7 @@ object ChatRoomApi {
 final class ChatRoomApi(
     appConf: AppConfig,
     chatUsersRegion: ActorRef[ChatCmd],
-    chatRoomRegion: ActorRef[ChatRoomCmd],
+    chatRoomSessionRegion: ActorRef[ChatRoomCmd],
     kss: ConcurrentHashMap[ChatName, KillSwitch],
   )(using system: ActorSystem[?])
     extends server.grpc.chat.ChatRoom {
@@ -53,7 +51,7 @@ final class ChatRoomApi(
   given streamRefsResolver: stream.StreamRefResolver = stream.StreamRefResolver(system)
 
   given cqlSession: CqlSession = ext.cqlSession
-  val getRecentTimeLime = {
+  val getRecentTimeLime: PreparedStatement = {
     val s = SimpleStatement
       .builder("SELECT chat, when, message FROM timeline WHERE chat=? AND time_bucket=? LIMIT ?")
       .setExecutionProfileName(ext.profileName)
@@ -79,7 +77,7 @@ final class ChatRoomApi(
       user: Participant,
     ): Flow[ClientCmd, ServerCmd, NotUsed] =
     RestartFlow.withBackoff(stream.RestartSettings(failoverTo.duration, failoverTo.duration.plus(2.seconds), 0.2))(() =>
-      Flow.lazyFutureFlow(() => chatRoomFlow(chatRoomRegion, authMsg, user))
+      Flow.lazyFutureFlow(() => chatRoomFlow(chatRoomSessionRegion, authMsg, user))
     )
 
   private def auth(
@@ -117,6 +115,9 @@ final class ChatRoomApi(
 
             val sinkRef: SinkRef[ClientCmd] =
               streamRefsResolver.resolveSinkRef[ClientCmd](reply.sinkRefStr)
+
+            // src[cmd].t0 sinkRef.sink()
+            // srcRef.source to Sink.
 
             Flow
               .fromSinkAndSourceCoupled(

@@ -18,6 +18,8 @@ import org.apache.pekko.http.scaladsl.*
 import org.apache.pekko.http.scaladsl.model.*
 import org.apache.pekko.management.scaladsl.PekkoManagement
 import org.apache.pekko.stream.KillSwitch
+//import org.apache.pekko.stream.snapshot.MaterializerState
+//import org.apache.pekko.actor.typed.scaladsl.adapter.TypedActorSystemOps
 import shared.AppConfig
 import shared.Domain.ChatName
 import shared.*
@@ -55,6 +57,21 @@ object AppBootstrap {
                |${sys.printTree}
                |★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★
                |""".stripMargin)
+
+          // https://github.com/nolangrace/akka-playground/blob/d5459a555c78fbcf886f1ef38b0011abde47cd33/src/main/scala/com/example/AkkaStreamsMaterializerState.scala#L58
+          /*MaterializerState.streamSnapshots(sys.toClassic).onComplete { snap =>
+            snap.map { interpreters =>
+              interpreters.map { streamSn =>
+                streamSn.activeInterpreters.map { interpreters =>
+                  import com.diogonunes.jcolor.*
+                  interpreters.logics.map(lsn => println(Ansi.colorize(s"Label:${lsn.label}", Attribute.YELLOW_TEXT())))
+                  interpreters
+                    .connections
+                    .map(csn => println(Ansi.colorize(s"${csn.in} ~> ${csn.out}", Attribute.RED_BACK())))
+                }
+              }
+            }
+          }*/
 
           shutdown.addTask(PhaseBeforeServiceUnbind, "before-unbind") { () =>
             Future.successful {

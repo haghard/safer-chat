@@ -62,29 +62,31 @@ object Guardian {
             cluster.subscriptions ! Unsubscribe(ctx.self)
 
             import org.apache.pekko.cluster.*
-            membersByAge.headOption.foreach { singleton =>
+            membersByAge.headOption.foreach { shardCoordinator =>
               val totalMemory = ManagementFactory
                 .getOperatingSystemMXBean()
                 .asInstanceOf[com.sun.management.OperatingSystemMXBean]
                 .getTotalMemorySize()
 
-              val rntm = Runtime.getRuntime()
+              val rntm = scala.sys.runtime
               val jvmInfo =
                 s"Cores:${rntm.availableProcessors()} Memory:[Total=${rntm.totalMemory() / 1000000}Mb, Max=${rntm
                     .maxMemory() / 1000000}Mb, Free=${rntm.freeMemory() / 1000000}Mb, RAM=${totalMemory / 1000000} ]"
 
+              // ${server.grpc.BuildInfo.toString}
+              val isUpd = if (cluster.selfMember.appVersion.compareTo(shardCoordinator.appVersion) > 0) "✅" else "❌"
               ctx
                 .log
                 .info(
                   s"""
-                     |------------- Started: ${cluster.selfMember.details()}  ------------------
-                     |Singleton: [${singleton.details2()}]/Leader:[${cluster.state.leader.getOrElse("")}]
+                     |--------------------------------------------------------------------------------
+                     |Member:${cluster.selfMember.details()}🧪ShCoord:${shardCoordinator
+                      .details()}🧪Leader:[${cluster.state.leader.getOrElse("")}]🧪Rolling update:$isUpd
                      |Members:[${membersByAge.map(_.details()).mkString(", ")}]
-                     |${server.grpc.BuildInfo.toString}
                      |Environment: [TZ:${TimeZone.getDefault.getID}. Start time:${LocalDateTime.now()}]
-                     |-XX:MaxRAMPercentage=${MemoryUtil2.determineReasonableMaxRAMPercentage()} 😄
+                     |-XX:MaxRAMPercentage=${MemoryUtil2.determineReasonableMaxRAMPercentage()}
                      |PID:${ProcessHandle.current().pid()} JVM: $jvmInfo
-                     |👍✅🚀🧪
+                     |👍✅🚀🧪❌😄📣🔥🐳🚨😱🥳
                      |---------------------------------------------------------------------------------
                      |""".stripMargin
                 )
@@ -102,9 +104,8 @@ object Guardian {
             val sharding = ClusterSharding(sys)
 
             val allocationStrategy = new org.apache.pekko.cluster.sharding.ConsistentHashingAllocation(4)
-
             val chatUserRegion: ActorRef[ChatCmd] = sharding.init(
-              Entity(Chat.TypeKey)(entityCtx => Chat(ChatName(entityCtx.entityId), appCfg))
+              Entity(ChatRoom.TypeKey)(entityCtx => ChatRoom(ChatName(entityCtx.entityId), appCfg))
                 .withSettings(
                   ClusterShardingSettings(sys)
                     .withPassivationStrategy(
@@ -114,12 +115,12 @@ object Guardian {
                         .withIdleEntityPassivation(3.minutes)
                     )
                 )
-                .withMessageExtractor(Chat.shardingMessageExtractor())
+                .withMessageExtractor(ChatRoom.shardingMessageExtractor())
                 .withStopMessage(StopChatEntity())
                 .withAllocationStrategy(allocationStrategy)
             )
 
-            val (cassandraSink, cks) = CassandraStore.mkSink
+            val (cassandraSink, cks) = CassandraStore.mkCassandraSink(cluster.selfMember.details3())
             kss.put(ChatName("cassandra.0"), cks)
 
             val chatRoomRegion: ActorRef[ChatRoomCmd] =

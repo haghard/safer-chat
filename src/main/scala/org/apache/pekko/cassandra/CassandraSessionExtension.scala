@@ -11,7 +11,7 @@ object CassandraSessionExtension extends ExtensionId[CassandraSessionExtension] 
 
   override def get(system: ActorSystem): CassandraSessionExtension = super.get(system)
 
-  override def lookup = CassandraSessionExtension
+  override def lookup: CassandraSessionExtension.type = CassandraSessionExtension
 
   override def createExtension(system: ExtendedActorSystem): CassandraSessionExtension =
     new CassandraSessionExtension(system)

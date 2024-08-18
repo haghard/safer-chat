@@ -22,12 +22,13 @@ import shared.Domain.{ ChatName, ReplyTo }
 import org.slf4j.Logger
 
 import java.nio.ByteBuffer
+import cluster.sharding.typed.ShardingMessageExtractor
 
-object Chat {
+object ChatRoom {
 
   type State = ChatState
 
-  val TypeKey = EntityTypeKey[ChatCmd]("chat")
+  val TypeKey = EntityTypeKey[ChatCmd]("chatroom")
 
   def hexId2Long(hexId: String): Long =
     java.lang.Long.parseUnsignedLong(hexId, 16)
@@ -37,8 +38,8 @@ object Chat {
     org.apache.pekko.cassandra.CassandraHash.hash(bts, 0, bts.array.length)
   }
 
-  def shardingMessageExtractor2(numOfShards: Int) =
-    new cluster.sharding.typed.ShardingMessageExtractor[ChatCmd, ChatCmd] {
+  def shardingMessageExtractor2(numOfShards: Int): ShardingMessageExtractor[ChatCmd, ChatCmd] =
+    new ShardingMessageExtractor[ChatCmd, ChatCmd] {
       override def entityId(cmd: ChatCmd): String =
         hashCmd(cmd.chat.raw()).toHexString
 
@@ -49,8 +50,8 @@ object Chat {
       override def unwrapMessage(cmd: ChatCmd): ChatCmd = cmd
     }
 
-  def shardingMessageExtractor() =
-    new cluster.sharding.typed.ShardingMessageExtractor[ChatCmd, ChatCmd] {
+  def shardingMessageExtractor(): ShardingMessageExtractor[ChatCmd, ChatCmd] =
+    new ShardingMessageExtractor[ChatCmd, ChatCmd] {
       override def entityId(cmd: ChatCmd): String =
         cmd.chat.raw()
 
@@ -79,8 +80,8 @@ object Chat {
 
       DurableStateBehavior[ChatCmd, ChatState](
         persistence.typed.PersistenceId.ofUniqueId(chatId.raw()),
-        ChatState(),
-        cmdHandler(appCfg),
+        emptyState = ChatState(),
+        commandHandler = cmdHandler(appCfg),
       )
         .onPersistFailure(SupervisorStrategy.restartWithBackoff(500.millis, 5.seconds, 0.2))
         .receiveSignal {

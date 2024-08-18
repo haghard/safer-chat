@@ -18,6 +18,7 @@ object Bootstrap {
   val APP_NAME = "safer-chat"
 
   def run(): Unit = {
+    sys.props += "APP_VERSION" -> server.grpc.BuildInfo.version
 
     given system: ActorSystem[Nothing] = {
       val cfg = ConfigFactory.load("application.conf").withFallback(ConfigFactory.load())
