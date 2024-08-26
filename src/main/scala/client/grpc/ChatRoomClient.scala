@@ -190,13 +190,16 @@ object ChatRoomClient {
   @main def main(args: String*): Unit = {
     val userName = if (args.isEmpty) throw new Exception("Expected <username> !") else args(0)
     val cfg =
-      ConfigFactory
-        .parseString("pekko.actor.provider=local")
-        .withFallback(ConfigFactory.load())
+      ConfigFactory.parseString("pekko.actor.provider=local").withFallback(ConfigFactory.load())
 
     val appConf = {
       val app = cfg.getConfig(APP_NAME)
-      AppConfig(app.getInt("port"), app.getString("secret-token"), app.getString("default"))
+      AppConfig(
+        app.getInt("grpc-port"),
+        app.getString("secret-token"),
+        app.getInt("http-port"),
+        app.getString("default"),
+      )
     }
 
     given sys: ActorSystem[Nothing] = ActorSystem(Behaviors.empty, "client", cfg)

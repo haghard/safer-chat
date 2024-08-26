@@ -1,7 +1,7 @@
 val scala3Version = "3.4.2"
 val pekkoV = "1.0.3"
 val pekkoHttpV = "1.0.0"
- val PekkoManagementVersion = "1.0.0"
+val PekkoManagementVersion = "1.0.0"
 val ProjectName = "safer-chat"
 
 val AmmoniteVersion = "3.0.0-M2-9-88291dd8"
@@ -59,6 +59,9 @@ lazy val root = project
         org.apache.pekko:pekko-actor_3:1.0.2
         org.apache.pekko:pekko-discovery_3:1.0.2
       */
+      "org.apache.pekko" %% "pekko-http" % "1.0.1",
+      "org.apache.pekko" %% "pekko-http-spray-json"% "1.0.1",
+
       "org.apache.pekko" %% "pekko-protobuf-v3" % pekkoV,
       "org.apache.pekko" %% "pekko-actor-typed" % pekkoV,
       ("org.apache.pekko" %% "pekko-cluster-sharding-typed" % pekkoV),
@@ -66,6 +69,8 @@ lazy val root = project
       "org.apache.pekko" %% "pekko-distributed-data" % pekkoV,
       "org.apache.pekko" %% "pekko-persistence-typed" % pekkoV,
       "org.apache.pekko" %% "pekko-stream-typed" % pekkoV,
+
+      "org.apache.pekko" %% "pekko-cluster-metrics" % pekkoV,
 
       "org.apache.pekko" %% "pekko-management" % PekkoManagementVersion,
       "org.apache.pekko" %% "pekko-management-cluster-bootstrap" % PekkoManagementVersion,
@@ -158,12 +163,13 @@ lazy val root = project
       //"-XX:+PrintGCDetails",
       //"-XshowSettings:vm",
 
-      "-Xms212m",
+      "-Xms256m",
       "-Xmx256m",
-
+      "-XX:+AlwaysPreTouch", //
+      
       //"-XX:ThreadStackSize=1048576", //[0 ... 1048576]
-      "-XX:ReservedCodeCacheSize=251658240",
-      "-XX:MaxDirectMemorySize=128m",
+      //"-XX:ReservedCodeCacheSize=251658240",
+      "-XX:MaxDirectMemorySize=64m",
 
       /*"-XX:+PrintFieldLayout",*/
       /*"-XX:MaxMetaspaceSize=650m",*/
@@ -184,6 +190,9 @@ lazy val root = project
       // https://youtu.be/kKigibHrV5I
       // "-XX:-UseAdaptiveSizePolicy", // -UseAdaptiveSizePolicy --disable use
       "-XX:+UseZGC", // https://www.baeldung.com/jvm-zgc-garbage-collector
+
+      "--add-opens",
+      "java.base/java.nio=ALL-UNNAMED",
       "--add-opens",
       "java.base/sun.nio.ch=ALL-UNNAMED",
 

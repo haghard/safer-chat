@@ -149,7 +149,8 @@ object Guardian {
                 ServerReflection.partial(List(server.grpc.chat.ChatRoom, server.grpc.admin.Admin)),
               )
 
-            AppBootstrap(appCfg, grpcService, kss)
+            AppBootstrap.grpc(appCfg, grpcService, kss)
+            AppBootstrap.http(appCfg)
             Behaviors.same
         }
       }

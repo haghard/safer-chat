@@ -198,8 +198,9 @@ object ChatUserSnapshot extends DefaultJsonProtocol {
 }
 
 final case class AppConfig(
-    port: Int,
+    grpcPort: Int,
     secretToken: String,
+    httpPort: Int,
     default: String)
 
 // https://github.com/keynmol/cloudflare-functions-scalajs/blob/main/src/main/scala/app.scala

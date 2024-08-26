@@ -27,6 +27,7 @@ import org.apache.pekko.stream.KillSwitch
 import shared.AppConfig
 import shared.Domain.ChatName
 import shared.*
+
 import java.security.cert.CertificateFactory
 
 object AppBootstrap {
@@ -61,7 +62,31 @@ object AppBootstrap {
     ConnectionContext.httpsServer(context)
   }
 
-  def apply(
+  def http(appCfg: AppConfig)(using sys: ActorSystem[?]): Unit = {
+    import sys.executionContext
+    val shutdown = CoordinatedShutdown(sys)
+    val logger = sys.log
+    val terminationDeadline =
+      sys.settings.config.getDuration("pekko.coordinated-shutdown.default-phase-timeout").asScala
+
+    Http()(sys)
+      .newServerAt(sys.settings.config.getString("pekko.remote.artery.canonical.hostname"), appCfg.httpPort)
+      .enableHttps(serverHttpContext(sys.log))
+      .bind(new RestApi().jvm)
+      .onComplete {
+        case Failure(cause) =>
+          shutdown.run(BindFailure)
+        case Success(binding) =>
+          logger.info("{} (HTTP on {})", Bootstrap.APP_NAME, appCfg.httpPort)
+          shutdown.addTask(CoordinatedShutdown.PhaseServiceUnbind, "terminate-http-server") { () =>
+            binding.terminate(terminationDeadline).map { _ =>
+              Done
+            }
+          }
+      }
+  }
+
+  def grpc(
       appCfg: AppConfig,
       grpcService: HttpRequest => Future[HttpResponse],
       kss: ConcurrentHashMap[ChatName, KillSwitch],
@@ -70,22 +95,21 @@ object AppBootstrap {
     import sys.executionContext
     val logger = sys.log
     val host = sys.settings.config.getString("pekko.remote.artery.canonical.hostname")
-    val port = appCfg.port
     val phaseTimeout =
       sys.settings.config.getDuration("pekko.coordinated-shutdown.default-phase-timeout").asScala
 
     val shutdown = CoordinatedShutdown(sys)
 
     Http()(sys)
-      .newServerAt(host, port)
+      .newServerAt(host, appCfg.grpcPort)
       .enableHttps(serverHttpContext(sys.log))
       .bind(grpcService)
       .onComplete {
         case Failure(ex) =>
-          logger.error(s"Shutting down. Couldn't bind to $host:$port", ex)
+          logger.error(s"Shutting down. Couldn't bind to $host:${appCfg.grpcPort}", ex)
           shutdown.run(BindFailure)
         case Success(binding) =>
-          logger.info("{} (GRPC)", Bootstrap.APP_NAME)
+          logger.info("{} (GRPC on {)", Bootstrap.APP_NAME, appCfg.grpcPort)
           logger.info(s"""
                |★ ★ ★ ★ ★ ★ ★ ★ ★ ActorSystem(${sys.name}) ★ ★ ★ ★ ★ ★ ★ ★ ★
                |${sys.printTree}

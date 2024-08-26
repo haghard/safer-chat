@@ -24,13 +24,17 @@ object Bootstrap {
       val cfg = ConfigFactory.load("application.conf").withFallback(ConfigFactory.load())
       val appConf = {
         val app = cfg.getConfig(APP_NAME)
-        AppConfig(app.getInt("port"), app.getString("secret-token"), app.getString("default"))
+        AppConfig(
+          app.getInt("grpc-port"),
+          app.getString("secret-token"),
+          app.getInt("http-port"),
+          app.getString("default"),
+        )
       }
       ActorSystem(Guardian(appConf), APP_NAME, cfg)
     }
 
     pekko.management.scaladsl.PekkoManagement(system).start()
-
     // http 127.0.0.1:8558/cluster/members "Authorization:Basic QWxhZGRpbjpPcGVuU2VzYW1l"
     /*management.start(_.withAuth({ (credentials: Credentials) =>
       credentials match {
