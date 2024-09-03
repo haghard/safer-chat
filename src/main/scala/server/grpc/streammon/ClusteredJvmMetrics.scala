@@ -14,6 +14,7 @@ import org.apache.pekko.stream.scaladsl.Source
 
 import java.time.{ Instant, ZoneId, ZonedDateTime }
 import java.time.format.DateTimeFormatter
+import scala.util.Random
 
 //curl --no-buffer -k https://127.0.0.1:8443/jvm
 //curl --cacert ./src/main/resources/fsa/fullchain.pem https://127.0.0.1:8443/jvm
@@ -54,12 +55,13 @@ object ClusteredJvmMetrics {
                 )
               ).prettyPrint
 
-              ctx
-                .log
-                .info(s"""
-                  |${JcmdUtils.logNativeMemory()}
-                  |★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★
-                  |""".stripMargin)
+              if (Random.nextDouble() < 0.1)
+                ctx
+                  .log
+                  .info(s"""
+                    |${JcmdUtils.logNativeMemory()}
+                    |★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★
+                    |""".stripMargin)
 
               output.offer(ByteString(json))
             case other =>

@@ -9,7 +9,6 @@ import com.typesafe.config.ConfigFactory
 import org.apache.pekko
 import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.cassandra.{ CassandraSessionExtension, CassandraStore }
-import shared.AppConfig
 import shared.*
 
 import scala.jdk.CollectionConverters.*

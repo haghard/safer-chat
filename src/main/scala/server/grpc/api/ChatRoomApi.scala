@@ -16,7 +16,6 @@ import org.apache.pekko.*
 import org.apache.pekko.actor.typed.*
 import org.apache.pekko.stream.*
 import org.apache.pekko.stream.scaladsl.*
-import com.domain.chat.ChatCmd
 import com.domain.chat.ChatReply.StatusCode
 import com.domain.chat.{ ChatReply, * }
 import com.domain.chatRoom.*

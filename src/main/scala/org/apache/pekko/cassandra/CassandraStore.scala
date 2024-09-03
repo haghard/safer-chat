@@ -246,10 +246,14 @@ object CassandraStore {
     MergeHub
       .source[ServerCmd](perProducerBufferSize = 1)
       // .log("cassandra-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}")(logger)
-      .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
+      .withAttributes(
+        Attributes
+          .inputBuffer(maxBatchSize, maxBatchSize * 4)
+          .and(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
+      )
       .via(StreamMonitor("chub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}"))
       .viaMat(KillSwitches.single)(Keep.both)
-      .groupedWithin(maxBatchSize, 150.millis)
+      .groupedWithin(maxBatchSize, 50.millis)
       // .wireTap(printStats("CassandraSink.stats:", 30.seconds))
       .via(
         ThroughputMonitor(

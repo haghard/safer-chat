@@ -1,10 +1,11 @@
-val scala3Version = "3.4.2"
+val scala3Version = "3.5.0"
 val pekkoV = "1.0.3"
 val pekkoHttpV = "1.0.0"
 val PekkoManagementVersion = "1.0.0"
 val ProjectName = "safer-chat"
 
-val AmmoniteVersion = "3.0.0-M2-9-88291dd8"
+//https://repo1.maven.org/maven2/com/lihaoyi/ammonite-compiler_3.4.2/3.0.0-M2-15-9bed9700/
+//val AmmoniteVersion = "3.0.0-M2-15-9bed9700"
 resolvers += "Apache Snapshots" at "https://repository.apache.org/content/repositories/snapshots/"
 
 val AppVersion = "0.0.2"
@@ -23,7 +24,7 @@ lazy val scalac3Settings = Seq(
     //https://github.com/apache/pekko-grpc/blob/88e8567e2decbca19642e5454729aa78cce455eb/project/Common.scala#L72
     "-Wconf:msg=Marked as deprecated in proto file:silent",
     "-Wconf:msg=pattern selector should be an instance of Matchable:silent",
-    "-Xfatal-warnings",
+    //"-Xfatal-warnings",
 
     // "-Ytasty-reader",
     "-Wunused:imports",
@@ -97,9 +98,9 @@ lazy val root = project
       "com.github.bastiaanjansen" % "otp-java" % "2.0.3",
       "com.datastax.oss" % "java-driver-core" % "4.17.0",
 
-      ("com.lihaoyi" % "ammonite" % AmmoniteVersion % "test" cross CrossVersion.full)
+      /*("com.lihaoyi" % "ammonite" % AmmoniteVersion % "test" cross CrossVersion.full)
         .exclude("com.thesamet.scalapb", "lenses_2.13")
-        .exclude("com.thesamet.scalapb", "scalapb-runtime_2.13"),
+        .exclude("com.thesamet.scalapb", "scalapb-runtime_2.13"),*/
 
       //https://github.com/scalag/scalag/blob/master/build.sbt
       //https://github.com/dialex/JColor

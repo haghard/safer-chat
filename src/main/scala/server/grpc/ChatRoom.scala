@@ -8,7 +8,6 @@ package grpc
 import scala.concurrent.duration.DurationInt
 import com.domain.chat.*
 
-import scala.concurrent.*
 import java.nio.charset.*
 import shared.*
 import server.grpc.state.ChatState
@@ -17,9 +16,7 @@ import org.apache.pekko.actor.typed.*
 import org.apache.pekko.actor.typed.scaladsl.*
 import org.apache.pekko.cluster.sharding.typed.scaladsl.*
 import org.apache.pekko.persistence.typed.state.scaladsl.*
-import org.apache.pekko.stream.*
 import shared.Domain.{ ChatName, ReplyTo }
-import org.slf4j.Logger
 
 import java.nio.ByteBuffer
 import cluster.sharding.typed.ShardingMessageExtractor

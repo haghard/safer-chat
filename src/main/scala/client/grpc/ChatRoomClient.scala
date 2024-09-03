@@ -12,9 +12,7 @@ import com.typesafe.config.ConfigFactory
 
 import java.nio.charset.StandardCharsets
 import java.time.{ Duration, Instant, ZonedDateTime }
-import java.util
 import java.util.concurrent.atomic.AtomicInteger
-import javax.crypto.Cipher
 import org.slf4j.Logger
 import server.grpc.*
 import org.apache.pekko.*
@@ -190,7 +188,8 @@ object ChatRoomClient {
   @main def main(args: String*): Unit = {
     val userName = if (args.isEmpty) throw new Exception("Expected <username> !") else args(0)
     val cfg =
-      ConfigFactory.parseString("pekko.actor.provider=local").withFallback(ConfigFactory.load())
+      ConfigFactory.load("client.conf")
+      // ConfigFactory.parseString("pekko.actor.provider=local").withFallback(ConfigFactory.load())
 
     val appConf = {
       val app = cfg.getConfig(APP_NAME)

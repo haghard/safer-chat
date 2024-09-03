@@ -86,7 +86,7 @@ object Guardian {
                      |Environment: [TZ:${TimeZone.getDefault.getID}. Start time:${LocalDateTime.now()}]
                      |-XX:MaxRAMPercentage=${MemoryUtil2.determineReasonableMaxRAMPercentage()}
                      |PID:${ProcessHandle.current().pid()} JVM: $jvmInfo
-                     |👍✅🚀🧪❌😄📣🔥🐳🚨😱🥳
+                     |👍✅🚀🧪❌😄📣🔥🐳🚨😱🥳💰⚡️🚨😱🥳
                      |---------------------------------------------------------------------------------
                      |""".stripMargin
                 )

@@ -8,7 +8,6 @@ import scala.concurrent.Future
 import scala.concurrent.duration.*
 import scala.util.*
 import java.util.concurrent.ConcurrentHashMap
-import shared.rsa.*
 import org.apache.pekko.Done
 import org.apache.pekko.actor.CoordinatedShutdown
 import org.apache.pekko.actor.CoordinatedShutdown.*
@@ -24,7 +23,6 @@ import java.security.cert.Certificate
 import javax.net.ssl.{ KeyManagerFactory, SSLContext }
 import org.apache.pekko.management.scaladsl.PekkoManagement
 import org.apache.pekko.stream.KillSwitch
-import shared.AppConfig
 import shared.Domain.ChatName
 import shared.*
 

@@ -7,7 +7,6 @@ package server.grpc.api
 import scala.concurrent.Future
 import scala.concurrent.duration.*
 import com.domain.chat.*
-import server.grpc.admin.*
 
 import com.domain.chat.request.*
 

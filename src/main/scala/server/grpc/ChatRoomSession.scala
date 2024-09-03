@@ -2,15 +2,12 @@ package server.grpc
 
 import com.datastax.oss.driver.api.core.uuid.Uuids
 import com.domain.chatRoom.*
-import org.apache.pekko.actor.typed.scaladsl.{ ActorContext, Behaviors }
-import org.apache.pekko.actor.typed.{ ActorRefResolver, Behavior }
+import org.apache.pekko.actor.typed.scaladsl.*
 import org.apache.pekko.cluster.sharding.typed.scaladsl.EntityTypeKey
-import org.apache.pekko.stream.KillSwitch
 import org.apache.pekko.*
 import org.apache.pekko.actor.typed.*
 import org.apache.pekko.stream.*
 import org.apache.pekko.stream.scaladsl.*
-import shared.Domain.{ ChatName, ReplyTo }
 import server.grpc.chat.*
 
 import scala.collection.immutable.HashSet
@@ -104,7 +101,8 @@ object ChatRoomSession {
               MergeHub
                 .source[ClientCmd](perProducerBufferSize = 1)
                 .mapMaterializedValue { sink =>
-                  ctx.log.info(s"MergeHub($chatName) materialization"); sink
+                  ctx.log.info(s"MergeHub($chatName) materialization")
+                  sink
                 }
                 // .throttle(128, 1.second, 128, ThrottleMode.shaping)
                 .map(clientCmd =>
