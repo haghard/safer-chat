@@ -42,7 +42,7 @@ object ChatRoom {
 
       override def shardId(entityId: String): String =
         entityId
-        // math.abs(hexId2Long(entityId) % numOfShards).toString
+      // math.abs(hexId2Long(entityId) % numOfShards).toString
 
       override def unwrapMessage(cmd: ChatCmd): ChatCmd = cmd
     }

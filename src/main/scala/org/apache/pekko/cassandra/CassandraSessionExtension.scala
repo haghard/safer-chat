@@ -19,10 +19,13 @@ object CassandraSessionExtension extends ExtensionId[CassandraSessionExtension] 
 
 //https://github.com/akka/akka-samples/blob/2.5/akka-sample-cqrs-scala/src/main/scala/sample/cqrs/CassandraSessionExtension.scala
 class CassandraSessionExtension(system: ActorSystem) extends Extension {
-  val profileName = "local"
   val cqlSession =
     CqlSession
       .builder()
-      .withKeyspace(CqlIdentifier.fromCql("chat"))
+      .withKeyspace(
+        CqlIdentifier.fromCql(
+          system.settings.config.getString("datastax-java-driver.profiles.local.basic.session-keyspace")
+        )
+      )
       .build()
 }

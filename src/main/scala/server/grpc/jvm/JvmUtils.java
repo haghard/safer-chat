@@ -1,4 +1,4 @@
-package server.grpc.streammon;
+package server.grpc.jvm;
 
 import java.io.*;
 import java.time.Instant;
@@ -6,7 +6,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 
-public class JcmdUtils {
+public class JvmUtils {
 
   static ZoneId defaultTZ = ZoneId.of(java.util.TimeZone.getDefault().getID());
   static DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss Z");

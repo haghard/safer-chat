@@ -1,9 +1,9 @@
-package server.grpc;
+package server.grpc.jvm;
 
 import java.lang.management.ManagementFactory;
 
 //https://github.com/oracle/graal/blob/259b37b8d731f52fdc8ce2720a0355b7b871dfbd/substratevm/src/com.oracle.svm.driver/src/com/oracle/svm/driver/MemoryUtil.java#L55
-class MemoryUtil2 {
+public class MemoryUtil {
 
   private static final long KiB_TO_BYTES = 1024L;
   private static final long MiB_TO_BYTES = 1024L * KiB_TO_BYTES;
@@ -26,7 +26,7 @@ class MemoryUtil2 {
    * the builder process. Prefer free memory over total memory to reduce memory pressure on the
    * host machine. Note that this method uses OperatingSystemMXBean, which is container-aware.
    */
-  static double determineReasonableMaxRAMPercentage() {
+  public static double determineReasonableMaxRAMPercentage() {
     var osBean = (com.sun.management.OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
     double totalMemorySize = osBean.getTotalMemorySize();
     double reasonableMaxMemorySize = osBean.getFreeMemorySize();

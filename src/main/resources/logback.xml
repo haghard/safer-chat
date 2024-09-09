@@ -3,7 +3,6 @@
   <property name="defaultPattern"
             value="%date{&quot;yyyy-MM-dd HH:mm:ss.SSSXXX&quot;, UTC} |%highlight(%level)| [%logger{36}]%replace(\[%mdc{prefix}\]){'\\[\\]', ''} %msg%replace(  | %mdc){'^         &gt;&gt;&gt; $', ''}%n" />
 
-
   <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
       <encoder>
         <!--<pattern>%yellow(%X{akkaTimestamp}) |%highlight(%-5level)| [%green(%X{sourceThread}, %X{sourceActorSystem}, %X{akkaSource})] %cyan(%logger{36}) - %highlight(%msg%n%ex{full})</pattern>-->
@@ -53,14 +52,17 @@
   </appender>
 
   <appender name="asyncFile" class="ch.qos.logback.classic.AsyncAppender">
+    <neverBlock>true</neverBlock>
     <appender-ref ref="SERVER"/>
   </appender>
 
   <appender name="asyncConsole" class="ch.qos.logback.classic.AsyncAppender">
+    <neverBlock>true</neverBlock>
     <appender-ref ref="console"/>
   </appender>
 
   <appender name="asyncSTDOUT" class="ch.qos.logback.classic.AsyncAppender">
+    <neverBlock>true</neverBlock>
     <appender-ref ref="STDOUT"/>
   </appender>
 
@@ -68,5 +70,10 @@
     <appender-ref ref="asyncSTDOUT"/>
     <appender-ref ref="asyncFile"/>
   </root>
+
+  <!-- adjust the driver's log verbosity; see
+   https://docs.datastax.com/en/developer/java-driver/4.0/manual/core/logging/
+   for more information -->
+  <logger name="com.datastax.oss.driver" level="INFO"/>
 
 </configuration>

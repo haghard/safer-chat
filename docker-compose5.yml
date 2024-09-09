@@ -2,14 +2,23 @@ version: '3.9'
 
 services:
   cassandra:
-    image: cassandra:5.0
+    image: cassandra:5.0.0
     hostname: cassandra-local
     container_name: cassandra
+    healthcheck:
+      test: [ "CMD-SHELL", "nc -z localhost 9042" ]
+    mem_limit: 1600m
+    mem_reservation: 1400Mb
     environment:
       CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
       CASSANDRA_DC: "dc1"
-      CASSANDRA_NUM_TOKENS: "1"
       CASSANDRA_START_RPC: "false"
-      JVM_EXTRA_OPTS: -Dcassandra.skip_wait_for_gossip_to_settle=0 -Dcassandra.load_ring_state=false -Dcassandra.initial_token=1 -Dcassandra.num_tokens=nil -Dcassandra.allocate_tokens_for_local_replication_factor=nil
+      CASSANDRA_CLUSTER_NAME: "schat"
+      #JVM_EXTRA_OPTS: -Dcassandra.skip_wait_for_gossip_to_settle=0 -Dcassandra.load_ring_state=false -Dcassandra.initial_token=1 -Dcassandra.num_tokens=nil -Dcassandra.allocate_tokens_for_local_replication_factor=nil
+      JVM_EXTRA_OPTS: -Dcassandra.skip_wait_for_gossip_to_settle=0 -Dcassandra.load_ring_state=false
+    volumes:
+      - ./cassandra-db/data:/var/lib/cassandra
+      - ./cassandra-db/cassandra.yaml:/etc/cassandra/cassandra.yaml
+      - ./cassandra-db/jvm17-server.options:/etc/cassandra/jvm17-server.options
     ports:
       - "9042:9042"

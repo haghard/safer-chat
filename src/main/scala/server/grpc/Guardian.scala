@@ -14,7 +14,6 @@ import java.lang.management.ManagementFactory
 import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.Logger
 import server.grpc.api.*
-import shared.rsa.*
 import org.apache.pekko.actor.typed.*
 import org.apache.pekko.actor.typed.scaladsl.*
 import org.apache.pekko.cassandra.CassandraStore
@@ -29,8 +28,10 @@ import server.grpc.chat.ChatRoomHandler
 import shared.AppConfig
 import shared.Domain.ChatName
 
+import java.net.InetAddress
 import java.time.LocalDateTime
 import java.util.TimeZone
+import scala.jdk.CollectionConverters.*
 
 object Guardian {
 
@@ -44,6 +45,15 @@ object Guardian {
         given sys: ActorSystem[?] = ctx.system
         given cluster: Cluster = Cluster(sys)
         given logger: Logger = sys.log
+
+        /*
+          ctx.actorOf(org.apache.pekko.actor.Props(new org.apache.pekko.event.slf4j.Slf4jLogger), "logger") ! org
+          .apache
+          .pekko
+          .event
+          .Logging
+          .InitializeLogger(new EventStream(sys.toClassic, false))
+         */
 
         cluster
           .subscriptions
@@ -75,6 +85,7 @@ object Guardian {
 
               // ${server.grpc.BuildInfo.toString}
               val isUpd = if (cluster.selfMember.appVersion.compareTo(shardCoordinator.appVersion) > 0) "✅" else "❌"
+
               ctx
                 .log
                 .info(
@@ -83,9 +94,23 @@ object Guardian {
                      |Member:${cluster.selfMember.details()}🧪ShCoord:${shardCoordinator
                       .details()}🧪Leader:[${cluster.state.leader.getOrElse("")}]🧪Rolling update:$isUpd
                      |Members:[${membersByAge.map(_.details()).mkString(", ")}]
-                     |Environment: [TZ:${TimeZone.getDefault.getID}. Start time:${LocalDateTime.now()}]
-                     |-XX:MaxRAMPercentage=${MemoryUtil2.determineReasonableMaxRAMPercentage()}
-                     |PID:${ProcessHandle.current().pid()} JVM: $jvmInfo
+                     |
+                     |Env
+                     |Hostname:${InetAddress.getLocalHost().getHostName()},
+                     |PID:${ProcessHandle.current().pid()}. Start time:${LocalDateTime
+                      .now()} / ${TimeZone.getDefault().getID()}
+                     |★ ★ ★ ★ ★ ★ JVM vendor/version: ${scala
+                      .sys
+                      .props("java.vm.name")}/${scala.sys.props("java.version")} ★ ★ ★ ★ ★ ★
+                     |$jvmInfo
+                     |${ManagementFactory
+                      .getMemoryPoolMXBeans()
+                      .asScala
+                      .map(p => s"${p.getName()} / ${p.getType()} / ${p.getPeakUsage()}")
+                      .mkString("\n")}
+                     |Args:${ManagementFactory.getRuntimeMXBean().getInputArguments()}
+                     |★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★
+                     |-XX:MaxRAMPercentage=${server.grpc.jvm.MemoryUtil.determineReasonableMaxRAMPercentage()}
                      |👍✅🚀🧪❌😄📣🔥🐳🚨😱🥳💰⚡️🚨😱🥳
                      |---------------------------------------------------------------------------------
                      |""".stripMargin

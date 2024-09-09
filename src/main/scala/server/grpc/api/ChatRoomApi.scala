@@ -6,7 +6,6 @@ package server.grpc
 package api
 
 import com.datastax.oss.driver.api.core.CqlSession
-import com.datastax.oss.driver.api.core.cql.{ PreparedStatement, SimpleStatement }
 
 import scala.concurrent.*
 import scala.concurrent.duration.*
@@ -50,13 +49,6 @@ final class ChatRoomApi(
   given streamRefsResolver: stream.StreamRefResolver = stream.StreamRefResolver(system)
 
   given cqlSession: CqlSession = ext.cqlSession
-  val getRecentTimeLime: PreparedStatement = {
-    val s = SimpleStatement
-      .builder("SELECT chat, when, message FROM timeline WHERE chat=? AND time_bucket=? LIMIT ?")
-      .setExecutionProfileName(ext.profileName)
-      .build()
-    cqlSession.prepare(s)
-  }
 
   def post(in: Source[ClientCmd, NotUsed]): Source[ServerCmd, NotUsed] =
     in.prefixAndTail(1).flatMapConcat {
@@ -128,7 +120,7 @@ final class ChatRoomApi(
                       case CmdTag.PUT =>
                         Future.successful(Seq(cmd))
                       case CmdTag.GET =>
-                        CassandraStore.getRecentHistory(cmd, getRecentTimeLime)
+                        CassandraStore.getRecentHistory(cmd)
                       case CmdTag.Unrecognized(un) =>
                         Future.failed(new Exception(s"Unknown CmdTag($un)"))
                     }

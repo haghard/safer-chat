@@ -18,6 +18,7 @@ object Bootstrap {
 
   def run(): Unit = {
     sys.props += "APP_VERSION" -> server.grpc.BuildInfo.version
+    // sys.props += "slf4j.provider" -> "org.apache.pekko.event.slf4j.Slf4jLogger"
 
     given system: ActorSystem[Nothing] = {
       val cfg = ConfigFactory.load("application.conf").withFallback(ConfigFactory.load())
@@ -33,7 +34,11 @@ object Bootstrap {
       ActorSystem(Guardian(appConf), APP_NAME, cfg)
     }
 
+    new ch.qos.logback.classic.LoggerContext()
+      .start()
+
     pekko.management.scaladsl.PekkoManagement(system).start()
+
     // http 127.0.0.1:8558/cluster/members "Authorization:Basic QWxhZGRpbjpPcGVuU2VzYW1l"
     /*management.start(_.withAuth({ (credentials: Credentials) =>
       credentials match {
@@ -73,5 +78,6 @@ object Bootstrap {
         system.whenTerminated,
         system.settings.config.getDuration("pekko.coordinated-shutdown.default-phase-timeout").asScala,
       )
+
   }
 }

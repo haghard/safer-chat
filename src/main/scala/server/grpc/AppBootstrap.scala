@@ -107,7 +107,7 @@ object AppBootstrap {
           logger.error(s"Shutting down. Couldn't bind to $host:${appCfg.grpcPort}", ex)
           shutdown.run(BindFailure)
         case Success(binding) =>
-          logger.info("{} (GRPC on {)", Bootstrap.APP_NAME, appCfg.grpcPort)
+          logger.info("{} GRPC on {}", Bootstrap.APP_NAME, appCfg.grpcPort)
           logger.info(s"""
                |★ ★ ★ ★ ★ ★ ★ ★ ★ ActorSystem(${sys.name}) ★ ★ ★ ★ ★ ★ ★ ★ ★
                |${sys.printTree}
@@ -134,7 +134,7 @@ object AppBootstrap {
 
           shutdown.addTask(PhaseBeforeServiceUnbind, "before-unbind") { () =>
             Future.successful {
-              logger.info(s"★ ★ ★ before-unbind [shutdown.${kss.values().size()} hubs]  ★ ★ ★")
+              logger.info(s"★ ★ ★ CoordinatedShutdown.0 [shutdown.${kss.values().size()} hubs]  ★ ★ ★")
               kss.forEach { (chat, ks) =>
                 ks.shutdown()
               }
@@ -148,14 +148,14 @@ object AppBootstrap {
           shutdown.addTask(PhaseServiceUnbind, "http-unbind") { () =>
             // No new connections are accepted. Existing connections are still allowed to perform request/response cycles
             binding.unbind().map { done =>
-              logger.info("★ ★ ★ CoordinatedShutdown [http-api.unbind] ★ ★ ★")
+              logger.info("★ ★ ★ CoordinatedShutdown.1 [http-api.unbind] ★ ★ ★")
               done
             }
           }
 
           shutdown.addTask(PhaseServiceUnbind, "management.stop") { () =>
             PekkoManagement(sys).stop().map { done =>
-              logger.info("CoordinatedShutdown.3 [management.stop]")
+              logger.info("★ ★ ★ CoordinatedShutdown.2 [management.stop] ★ ★ ★")
               done
             }
           }
@@ -166,7 +166,7 @@ object AppBootstrap {
               * all the req that have been accepted will be completed and only than the shutdown will continue
               */
             binding.terminate(phaseTimeout - 2.second).map { _ =>
-              logger.info("★ ★ ★ CoordinatedShutdown [http-api.terminate]  ★ ★ ★")
+              logger.info("★ ★ ★ CoordinatedShutdown.3 [http-api.terminate]  ★ ★ ★")
               Done
             }
           }
@@ -174,7 +174,7 @@ object AppBootstrap {
           // forcefully kills connections that are still open
           shutdown.addTask(PhaseServiceStop, "close.connections") { () =>
             Http().shutdownAllConnectionPools().map { _ =>
-              logger.info("★ ★ ★ CoordinatedShutdown [close.connections] ★ ★ ★")
+              logger.info("★ ★ ★ CoordinatedShutdown.4 [close.connections] ★ ★ ★")
               Done
             }
           }
@@ -183,7 +183,7 @@ object AppBootstrap {
           shutdown.addTask(PhaseServiceRequestsDone, "kss.shutdown") { () =>
             Future {
               kss.values().forEach(_.abort(new Exception("abort")))
-              logger.info(s"★ ★ ★ CoordinatedShutdown [kss.shutdown.${kss.size()} ]  ★ ★ ★")
+              logger.info(s"★ ★ ★ CoordinatedShutdown.5 [kss.shutdown.${kss.size()} ]  ★ ★ ★")
               Done
             }
           }
@@ -198,7 +198,7 @@ object AppBootstrap {
                   .FutureConverters
                   .asScala(CassandraSessionExtension(sys).cqlSession.forceCloseAsync())
                   .map { _ =>
-                    logger.info(s"★ ★ ★ CoordinatedShutdown [before-cluster-shutdown.0]  ★ ★ ★")
+                    logger.info(s"★ ★ ★ CoordinatedShutdown.6 [before-cluster-shutdown]  ★ ★ ★")
                     Done
                   }
               )
@@ -206,7 +206,7 @@ object AppBootstrap {
 
           shutdown.addTask(PhaseActorSystemTerminate, "actor-system-terminate.0") { () =>
             Future.successful {
-              logger.info("★ ★ ★ CoordinatedShutdown [actor-system-terminate.0] ★ ★ ★")
+              logger.info("★ ★ ★ CoordinatedShutdown.7 [actor-system-terminate] ★ ★ ★")
               Done
             }
           }

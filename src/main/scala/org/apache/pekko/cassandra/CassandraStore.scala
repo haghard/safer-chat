@@ -97,7 +97,6 @@ object CassandraStore {
 
   def getRecentHistory(
       cmd: ServerCmd,
-      getRecent: PreparedStatement,
       limit: Int = 15,
     )(using
       cqlSession: CqlSession,
@@ -106,6 +105,15 @@ object CassandraStore {
     val chat = cmd.chat.raw()
     val ts = cmd.timeUuid.toUnixTs()
     val bucket = formatterMM.format(ZonedDateTime.ofInstant(Instant.ofEpochMilli(ts), UTC))
+
+    val getRecent: PreparedStatement =
+      cqlSession.prepare(
+        SimpleStatement
+          .builder("SELECT chat, when, message FROM timeline WHERE chat=? AND time_bucket=? LIMIT ?")
+          .setExecutionProfileName(profileName)
+          .build()
+      )
+
     cqlSession
       .executeAsync(getRecent.bind(chat, bucket, limit).setPageSize(limit))
       .asScala
@@ -410,21 +418,13 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
       cqlSession.execute(CassandraStore.chatDetailsTable)
       cqlSession.execute(CassandraStore.chatTimelineTable)
 
-      val getTimeLimeVersion = {
-        val s = SimpleStatement
-          .builder("SELECT chat, when, message FROM timeline WHERE chat=? AND time_bucket=? LIMIT ?")
-          .setExecutionProfileName(profileName)
-          .build()
-        cqlSession.prepare(s)
-      }
-
-      val getDetailsRevision = {
-        val s = SimpleStatement
-          .builder("SELECT participants, revision FROM chat_details WHERE chat=?")
-          .setExecutionProfileName(profileName)
-          .build()
-        cqlSession.prepare(s)
-      }
+      val getDetailsRevision =
+        cqlSession.prepare(
+          SimpleStatement
+            .builder("SELECT participants, revision FROM chat_details WHERE chat=?")
+            .setExecutionProfileName(profileName)
+            .build()
+        )
 
       val writeDetails =
         cqlSession.prepare("INSERT INTO chat_details(chat, revision, participants) VALUES (?, ?, ?)")

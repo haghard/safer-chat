@@ -11,6 +11,7 @@ import spray.json.*
 import org.apache.pekko.cluster.metrics.*
 import org.apache.pekko.stream.BoundedSourceQueue
 import org.apache.pekko.stream.scaladsl.Source
+import server.grpc.jvm.JvmUtils
 
 import java.time.{ Instant, ZoneId, ZonedDateTime }
 import java.time.format.DateTimeFormatter
@@ -59,7 +60,7 @@ object ClusteredJvmMetrics {
                 ctx
                   .log
                   .info(s"""
-                    |${JcmdUtils.logNativeMemory()}
+                    |${JvmUtils.logNativeMemory()}
                     |★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★
                     |""".stripMargin)
 

@@ -50,10 +50,10 @@ object ChatRoomClient {
 
   def genMsg(userName: String) =
     s"$userName: hello at " + cnt.getAndIncrement()
-    // s"$userName: " + scala.util.Random.alphanumeric.take(260).foldLeft("<")(_ + _)
-    // s"$userName: " + scala.util.Random(31).nextString(260)
-    // s"$userName: hello at " + System.currentTimeMillis()
-    // s"$userName: " + ("a" * 260)
+  // s"$userName: " + scala.util.Random.alphanumeric.take(260).foldLeft("<")(_ + _)
+  // s"$userName: " + scala.util.Random(31).nextString(260)
+  // s"$userName: hello at " + System.currentTimeMillis()
+  // s"$userName: " + ("a" * 260)
 
   def postMessages(
       user: ChatUser,
@@ -189,7 +189,7 @@ object ChatRoomClient {
     val userName = if (args.isEmpty) throw new Exception("Expected <username> !") else args(0)
     val cfg =
       ConfigFactory.load("client.conf")
-      // ConfigFactory.parseString("pekko.actor.provider=local").withFallback(ConfigFactory.load())
+    // ConfigFactory.parseString("pekko.actor.provider=local").withFallback(ConfigFactory.load())
 
     val appConf = {
       val app = cfg.getConfig(APP_NAME)

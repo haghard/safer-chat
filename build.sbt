@@ -1,14 +1,23 @@
 val scala3Version = "3.5.0"
-val pekkoV = "1.0.3"
-val pekkoHttpV = "1.0.0"
-val PekkoManagementVersion = "1.0.0"
+
+//https://pekko.apache.org/docs/pekko/1.1/release-notes/releases-1.1.html
+//https://github.com/apache/pekko/milestone/2?closed=1
+//https://github.com/apache/pekko/pull/748/files
+
+val pekkoV = "1.1.0" //1.0.3
+val logbackVersion = "1.5.7" //"1.3.14"
+
+
+val pekkoHttpV = "1.1.0-M1"
+val PekkoManagementVersion = "1.1.0-M1"
+
 val ProjectName = "safer-chat"
 
 //https://repo1.maven.org/maven2/com/lihaoyi/ammonite-compiler_3.4.2/3.0.0-M2-15-9bed9700/
 //val AmmoniteVersion = "3.0.0-M2-15-9bed9700"
 resolvers += "Apache Snapshots" at "https://repository.apache.org/content/repositories/snapshots/"
 
-val AppVersion = "0.0.2"
+val AppVersion = "0.1.0"
 
 //show scalacOptions
 lazy val scalac3Settings = Seq(
@@ -17,8 +26,8 @@ lazy val scalac3Settings = Seq(
     "-feature",
     "-language:implicitConversions",
     "-unchecked",
-    "-Ykind-projector",
-    "-Ysafe-init", // guards against forward access reference
+    "-Xkind-projector",
+    "-Wsafe-init", // guards against forward access reference
     "-language:adhocExtensions",
     "-release:17",
     //https://github.com/apache/pekko-grpc/blob/88e8567e2decbca19642e5454729aa78cce455eb/project/Common.scala#L72
@@ -60,8 +69,9 @@ lazy val root = project
         org.apache.pekko:pekko-actor_3:1.0.2
         org.apache.pekko:pekko-discovery_3:1.0.2
       */
-      "org.apache.pekko" %% "pekko-http" % "1.0.1",
-      "org.apache.pekko" %% "pekko-http-spray-json"% "1.0.1",
+
+      "org.apache.pekko" %% "pekko-http" % pekkoHttpV,
+      "org.apache.pekko" %% "pekko-http-spray-json"% pekkoHttpV,
 
       "org.apache.pekko" %% "pekko-protobuf-v3" % pekkoV,
       "org.apache.pekko" %% "pekko-actor-typed" % pekkoV,
@@ -82,17 +92,25 @@ lazy val root = project
       //https://pekko.apache.org/docs/pekko-persistence-r2dbc/current/query.html#publish-events-for-lower-latency-of-eventsbyslices
       //"org.apache.pekko" %% "pekko-persistence-r2dbc" % "1.0.0",
 
-      "ch.qos.logback" % "logback-classic" % "1.2.11",
+      //"org.slf4j" % "slf4j-api" % slf4jVersion,
+
       "org.apache.pekko" %% "pekko-slf4j" % pekkoV,
+
+      //https://nightlies.apache.org/pekko/docs/pekko/1.0.2/docs/additional/deploying.html
+      //https://github.com/apache/pekko-samples/blob/main/pekko-sample-cluster-kubernetes-scala/build.sbt
+      //"ch.qos.logback" % "logback-classic" % "1.2.11",
+
+      //https://github.com/apache/pekko/blob/ad55d1c4142b24e51f6cc386fd0e5ad9fe77eafa/project/Dependencies.scala#L39C25-L39C31
+      "ch.qos.logback" % "logback-classic" % logbackVersion,
 
       "com.madgag.spongycastle" % "core" % "1.58.0.0",
       "org.bouncycastle" % "bcpkix-jdk18on" % "1.78.1",
 
       //https://tarao.orezdnu.org/record4s/
-      "com.github.tarao" %% "record4s" % "0.13.0",
+      //"com.github.tarao" %% "record4s" % "0.13.0",
 
-      "io.aeron" % "aeron-driver" % "1.44.1",
-      "io.aeron" % "aeron-client" % "1.44.1",
+      "io.aeron" % "aeron-driver" % "1.45.0",
+      "io.aeron" % "aeron-client" % "1.45.0",
 
       "org.wvlet.airframe" %% "airframe-ulid" % "24.7.1",
       "com.github.bastiaanjansen" % "otp-java" % "2.0.3",
@@ -104,8 +122,9 @@ lazy val root = project
 
       //https://github.com/scalag/scalag/blob/master/build.sbt
       //https://github.com/dialex/JColor
-      "com.lihaoyi" % "pprint_3" % "0.9.0",
-      "com.diogonunes" % "JColor" % "5.5.1",
+      //https://github.com/ComputeNode/scalag/blob/master/build.sbt
+      //"com.lihaoyi" % "pprint_3" % "0.9.0",
+      //"com.diogonunes" % "JColor" % "5.5.1",
     ),
 
     dependencyOverrides ++= Seq(
@@ -116,12 +135,30 @@ lazy val root = project
       "org.apache.pekko" %% "pekko-distributed-data" % pekkoV,
       "org.apache.pekko" %% "pekko-persistence-typed" % pekkoV,
       "org.apache.pekko" %% "pekko-stream-typed" % pekkoV,
-      "org.apache.pekko" %% "pekko-management" % "1.0.0",
-      "org.apache.pekko" %% "pekko-management-cluster-bootstrap" % "1.0.0",
+      "org.apache.pekko" %% "pekko-slf4j" % pekkoV,
+      "org.apache.pekko" %% "pekko-management" % PekkoManagementVersion,
+      "org.apache.pekko" %% "pekko-management-cluster-bootstrap" % PekkoManagementVersion,
+      "org.apache.pekko" %% "pekko-management-cluster-http" % PekkoManagementVersion,
     ),
-    assemblyMergeStrategy := {
+
+    //braindrill
+    /*assembly / assemblyMergeStrategy := {
+      case PathList("META-INF", "versions", "9", "module-info.class") => MergeStrategy.discard
+      case PathList("module-info.class") => MergeStrategy.discard
       case PathList("META-INF", xs @ _*)                                  => MergeStrategy.discard
-      case PathList(xs @ _*) if xs.last == "module-info.class"            => MergeStrategy.discard
+      // https://github.com/akka/akka/issues/29456
+      case PathList("google", "protobuf", _)    => MergeStrategy.discard
+      case PathList("google", "protobuf", _, _) => MergeStrategy.discard
+      case x =>
+        val oldStrategy = (assembly / assemblyMergeStrategy).value
+        oldStrategy(x)
+    },*/
+
+    assemblyMergeStrategy := {
+      case PathList("META-INF", "versions", "9", "module-info.class") => MergeStrategy.discard
+      case PathList("module-info.class") => MergeStrategy.discard
+      case PathList("META-INF", xs @ _*)                                  => MergeStrategy.discard
+      //case PathList(xs @ _*) if xs.last == "module-info.class"            => MergeStrategy.discard
       case PathList(xs @ _*) if xs.last == "io.netty.versions.properties" => MergeStrategy.rename
       case "application.conf"                                             => MergeStrategy.concat
       case "version.conf"                                                 => MergeStrategy.concat
@@ -192,10 +229,8 @@ lazy val root = project
       // "-XX:-UseAdaptiveSizePolicy", // -UseAdaptiveSizePolicy --disable use
       "-XX:+UseZGC", // https://www.baeldung.com/jvm-zgc-garbage-collector
 
-      "--add-opens",
-      "java.base/java.nio=ALL-UNNAMED",
-      "--add-opens",
-      "java.base/sun.nio.ch=ALL-UNNAMED",
+      "--add-opens", "java.base/java.nio=ALL-UNNAMED",
+      "--add-opens", "java.base/sun.nio.ch=ALL-UNNAMED",
 
       //https://youtu.be/vh4qAsxegNY?list=LL
 
@@ -255,7 +290,6 @@ val unnamedJavaOptions = List(
   "--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED"
 )
 
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 ./target/scala-3.4.2/safer-chat-0.0.2.jar
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 ./target/scala-3.4.2/safer-chat-0.0.2.jar
-
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 ./target/scala-3.5.0/safer-chat-0.1.0.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 ./target/scala-3.5.0/safer-chat-0.1.0.jar
 //show dependencyList

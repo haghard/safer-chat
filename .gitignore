@@ -34,3 +34,4 @@ metals.sbt
 /server.keystore
 /safer-chat.keystore
 /ks/
+/cassandra-db/data/
