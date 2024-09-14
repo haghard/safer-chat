@@ -104,7 +104,6 @@ object ChatRoomSession {
                   ctx.log.info(s"MergeHub($chatName) materialization")
                   sink
                 }
-                // .throttle(128, 1.second, 128, ThrottleMode.shaping)
                 .map(clientCmd =>
                   ServerCmd(
                     clientCmd.chat,

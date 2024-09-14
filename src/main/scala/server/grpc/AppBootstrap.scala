@@ -9,10 +9,11 @@ import scala.concurrent.duration.*
 import scala.util.*
 import java.util.concurrent.ConcurrentHashMap
 import org.apache.pekko.Done
-import org.apache.pekko.actor.CoordinatedShutdown
+import org.apache.pekko.actor.{ Address, CoordinatedShutdown }
 import org.apache.pekko.actor.CoordinatedShutdown.*
 import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.cassandra.CassandraSessionExtension
+import org.apache.pekko.cluster.typed.Cluster
 import org.apache.pekko.http.scaladsl.*
 import org.apache.pekko.http.scaladsl.model.*
 import org.apache.pekko.pki.pem.{ DERPrivateKeyLoader, PEMDecoder }
@@ -31,6 +32,13 @@ import java.security.cert.CertificateFactory
 object AppBootstrap {
 
   case object BindFailure extends Reason
+
+  def leaseOwnerFromAkkaMember(classicSystemName: String, addr: Address): String = {
+    val sb = new java.lang.StringBuilder().append(classicSystemName)
+    if (addr.host.isDefined) sb.append('@').append(addr.host.get)
+    if (addr.port.isDefined) sb.append(':').append(addr.port.get)
+    sb.toString
+  }
 
   def serverHttpContext(log: org.slf4j.Logger): HttpsConnectionContext = {
     val keyPath = "fsa/privkey.key"
@@ -90,6 +98,7 @@ object AppBootstrap {
       kss: ConcurrentHashMap[ChatName, KillSwitch],
     )(using sys: ActorSystem[?]
     ): Unit = {
+    val ua = Cluster(sys).selfMember.uniqueAddress
     import sys.executionContext
     val logger = sys.log
     val host = sys.settings.config.getString("pekko.remote.artery.canonical.hostname")
@@ -187,6 +196,26 @@ object AppBootstrap {
               Done
             }
           }
+
+          // Best-effort attempt to cleanup leases without waiting for TTL
+          /*shutdown.addTask(PhaseClusterExitingDone, "release.lease") { () =>
+            val leaseOwner = leaseOwnerFromAkkaMember(sys.name, ua.address)
+            val lease = org
+              .apache
+              .pekko
+              .coordination
+              .lease
+              .scaladsl
+              .LeaseProvider(sys)
+              .getLease(s"schat-${CassandraLease.SbrPref}", CassandraLease.configPath, leaseOwner)
+
+            lease match {
+              case lease: CassandraLease =>
+                val msg = s"★ ★ ★ CoordinatedShutdown [release.lease] by $leaseOwner released on exit: {} ★ ★ ★"
+                lease.releaseOnExit(msg).map(_ => Done)
+              case _ => Future.successful(Done)
+            }
+          }*/
 
           shutdown.addTask(PhaseBeforeClusterShutdown, "before-cluster-shutdown.0") { () =>
             Http()

@@ -7,6 +7,8 @@ import org.apache.pekko.actor.ExtensionId
 import org.apache.pekko.actor.ExtensionIdProvider
 import com.datastax.oss.driver.api.core.{ CqlIdentifier, CqlSession }
 
+import java.nio.file.Paths
+
 object CassandraSessionExtension extends ExtensionId[CassandraSessionExtension] with ExtensionIdProvider {
 
   override def get(system: ActorSystem): CassandraSessionExtension = super.get(system)
@@ -17,15 +19,18 @@ object CassandraSessionExtension extends ExtensionId[CassandraSessionExtension] 
     new CassandraSessionExtension(system)
 }
 
-//https://github.com/akka/akka-samples/blob/2.5/akka-sample-cqrs-scala/src/main/scala/sample/cqrs/CassandraSessionExtension.scala
 class CassandraSessionExtension(system: ActorSystem) extends Extension {
+  val cloudConfigPath = Paths.get("./src/main/resources/schat-cloud.zip")
+  val keyspaceName = system.settings.config.getString("cassandra.keyspace")
+
   val cqlSession =
     CqlSession
       .builder()
-      .withKeyspace(
-        CqlIdentifier.fromCql(
-          system.settings.config.getString("datastax-java-driver.profiles.local.basic.session-keyspace")
-        )
+      .withCloudSecureConnectBundle(cloudConfigPath)
+      .withAuthCredentials(
+        system.settings.config.getString("cassandra.username"),
+        system.settings.config.getString("cassandra.psw"),
       )
+      .withKeyspace(CqlIdentifier.fromCql(keyspaceName))
       .build()
 }

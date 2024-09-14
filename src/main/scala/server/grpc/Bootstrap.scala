@@ -11,8 +11,6 @@ import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.cassandra.{ CassandraSessionExtension, CassandraStore }
 import shared.*
 
-import scala.jdk.CollectionConverters.*
-
 object Bootstrap {
   val APP_NAME = "safer-chat"
 
@@ -34,9 +32,6 @@ object Bootstrap {
       ActorSystem(Guardian(appConf), APP_NAME, cfg)
     }
 
-    new ch.qos.logback.classic.LoggerContext()
-      .start()
-
     pekko.management.scaladsl.PekkoManagement(system).start()
 
     // http 127.0.0.1:8558/cluster/members "Authorization:Basic QWxhZGRpbjpPcGVuU2VzYW1l"
@@ -51,13 +46,6 @@ object Bootstrap {
 
     pekko.management.cluster.bootstrap.ClusterBootstrap(system).start()
     // pekko.discovery.Discovery(system).loadServiceDiscovery("config")
-
-    // https://docs.datastax.com/en/developer/java-driver/4.17/manual/core/
-    val cps = system
-      .settings
-      .config
-      .getStringList("datastax-java-driver.profiles.local.basic.contact-points")
-      .asScala
 
     try {
       val cqlSession = CassandraSessionExtension(system).cqlSession

@@ -1,12 +1,7 @@
 val scala3Version = "3.5.0"
 
-//https://pekko.apache.org/docs/pekko/1.1/release-notes/releases-1.1.html
-//https://github.com/apache/pekko/milestone/2?closed=1
-//https://github.com/apache/pekko/pull/748/files
-
-val pekkoV = "1.1.0" //1.0.3
-val logbackVersion = "1.5.7" //"1.3.14"
-
+val pekkoV = "1.1.1"
+val logbackVersion = "1.3.14" //1.5.7
 
 val pekkoHttpV = "1.1.0-M1"
 val PekkoManagementVersion = "1.1.0-M1"
@@ -49,8 +44,9 @@ lazy val root = project
     organization := "haghard",
     version := AppVersion,
     scalaVersion := scala3Version,
+    usePipelining := true,
     startYear := Some(2024),
-    developers := List(Developer("haghard", "Vadim Bondarev", "hagard84@gmail.com", url("https://github.com/haghard"))),
+    developers := List(Developer("haghard", "Vadim Bondarev", "haghard84@gmail.com", url("https://github.com/haghard"))),
 
     // sbt headerCreate
     licenses += ("Apache-2.0", new URL("https://www.apache.org/licenses/LICENSE-2.0.txt")),
@@ -80,6 +76,8 @@ lazy val root = project
       "org.apache.pekko" %% "pekko-distributed-data" % pekkoV,
       "org.apache.pekko" %% "pekko-persistence-typed" % pekkoV,
       "org.apache.pekko" %% "pekko-stream-typed" % pekkoV,
+
+      "org.apache.pekko" %% "pekko-coordination" % pekkoV,
 
       "org.apache.pekko" %% "pekko-cluster-metrics" % pekkoV,
 
@@ -136,29 +134,16 @@ lazy val root = project
       "org.apache.pekko" %% "pekko-persistence-typed" % pekkoV,
       "org.apache.pekko" %% "pekko-stream-typed" % pekkoV,
       "org.apache.pekko" %% "pekko-slf4j" % pekkoV,
+      "org.apache.pekko" %% "pekko-coordination" % pekkoV,
       "org.apache.pekko" %% "pekko-management" % PekkoManagementVersion,
       "org.apache.pekko" %% "pekko-management-cluster-bootstrap" % PekkoManagementVersion,
       "org.apache.pekko" %% "pekko-management-cluster-http" % PekkoManagementVersion,
     ),
 
-    //braindrill
-    /*assembly / assemblyMergeStrategy := {
-      case PathList("META-INF", "versions", "9", "module-info.class") => MergeStrategy.discard
-      case PathList("module-info.class") => MergeStrategy.discard
-      case PathList("META-INF", xs @ _*)                                  => MergeStrategy.discard
-      // https://github.com/akka/akka/issues/29456
-      case PathList("google", "protobuf", _)    => MergeStrategy.discard
-      case PathList("google", "protobuf", _, _) => MergeStrategy.discard
-      case x =>
-        val oldStrategy = (assembly / assemblyMergeStrategy).value
-        oldStrategy(x)
-    },*/
-
     assemblyMergeStrategy := {
-      case PathList("META-INF", "versions", "9", "module-info.class") => MergeStrategy.discard
-      case PathList("module-info.class") => MergeStrategy.discard
+      case PathList("META-INF", "versions", "9", "module-info.class")     => MergeStrategy.discard
+      case PathList("module-info.class")                                  => MergeStrategy.discard
       case PathList("META-INF", xs @ _*)                                  => MergeStrategy.discard
-      //case PathList(xs @ _*) if xs.last == "module-info.class"            => MergeStrategy.discard
       case PathList(xs @ _*) if xs.last == "io.netty.versions.properties" => MergeStrategy.rename
       case "application.conf"                                             => MergeStrategy.concat
       case "version.conf"                                                 => MergeStrategy.concat
@@ -195,9 +180,10 @@ lazy val root = project
     // make version compatible with docker for publishing
     ThisBuild / dynverSeparator := "-",
     javaOptions ++= Seq(
-      "-XX:+PrintFlagsFinal",
-      "-XX:+PrintCommandLineFlags",
+      //"-XX:+PrintFlagsFinal",
+      //"-XX:+PrintCommandLineFlags",
       "-XshowSettings:system -version",
+      
       //"-XX:+PrintGCDetails",
       //"-XshowSettings:vm",
 

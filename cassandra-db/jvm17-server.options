@@ -60,8 +60,12 @@
 # Setting both to the same value can reduce STW durations.
 #-XX:ConcGCThreads=16
 
--Xms1200m
--Xmx1200m
+
+#-Xms1200m
+#-Xmx1200m
+-XX:InitialRAMPercentage=75
+-XX:MaxRAMPercentage=75
+
 
 ### JPMS
 

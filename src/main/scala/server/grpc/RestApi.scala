@@ -37,7 +37,7 @@ final class RestApi(using sys: ActorSystem[?]) extends Directives {
               .Chunked
               .fromData(
                 ContentTypes.`text/plain(UTF-8)`,
-                ClusteredJvmMetrics.jvmSource(src, System.currentTimeMillis()),
+                ClusteredJvmMetrics.jvmMetricsSrc(src, System.currentTimeMillis()),
               )
           )
         )

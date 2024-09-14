@@ -11,11 +11,9 @@ import spray.json.*
 import org.apache.pekko.cluster.metrics.*
 import org.apache.pekko.stream.BoundedSourceQueue
 import org.apache.pekko.stream.scaladsl.Source
-import server.grpc.jvm.JvmUtils
 
 import java.time.{ Instant, ZoneId, ZonedDateTime }
 import java.time.format.DateTimeFormatter
-import scala.util.Random
 
 //curl --no-buffer -k https://127.0.0.1:8443/jvm
 //curl --cacert ./src/main/resources/fsa/fullchain.pem https://127.0.0.1:8443/jvm
@@ -24,12 +22,11 @@ object ClusteredJvmMetrics {
   def apply(output: BoundedSourceQueue[ByteString]): Behavior[Nothing] =
     Behaviors
       .setup[ClusterMetricsEvent] { ctx =>
-        val divider = 1024 * 1024
         val defaultTZ = ZoneId.of(java.util.TimeZone.getDefault.getID)
         val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss Z")
         val ex = ClusterMetricsExtension(ctx.system)
         ex.subscribe(ctx.self.toClassic)
-        active(output, ex, divider, defaultTZ, formatter)
+        active(output, ex, 1024 * 1024, defaultTZ, formatter)
       }
       .narrow
 
@@ -56,13 +53,14 @@ object ClusteredJvmMetrics {
                 )
               ).prettyPrint
 
-              if (Random.nextDouble() < 0.1)
+              /*if (java.util.concurrent.ThreadLocalRandom.current().nextDouble() < .1)
                 ctx
                   .log
                   .info(s"""
-                    |${JvmUtils.logNativeMemory()}
+                    |${server.grpc.jvm.JvmUtils.logNativeMemory()}
                     |★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★
                     |""".stripMargin)
+               */
 
               output.offer(ByteString(json))
             case other =>
@@ -79,7 +77,7 @@ object ClusteredJvmMetrics {
           Behaviors.stopped
       }
 
-  def jvmSource(
+  def jvmMetricsSrc(
       src: Source[ByteString, NotUsed],
       clientId: Long,
     )(using sys: ActorSystem[?]

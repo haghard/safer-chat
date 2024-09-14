@@ -43,7 +43,7 @@ import scala.concurrent.duration.*
 
 object CassandraStore {
 
-  val profileName = "local"
+  val profileName = "default"
 
   val formatterMM = DateTimeFormatter.ofPattern("yyyy-MM")
   val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss:SSSSSS Z")
@@ -60,9 +60,12 @@ object CassandraStore {
        */
 
       val config = cqlSession.getContext().getConfig()
-      val profile = config.getProfile(profileName)
+      // val profile = config.getProfile(profileName)
+      val profile = config.getDefaultProfile()
+
       val profileConf =
         s"""
+           |${profile.getName}
            |REQUEST_TIMEOUT:${profile.getDuration(DefaultDriverOption.REQUEST_TIMEOUT)}
            |CONNECTION_MAX_REQUESTS:${profile.getInt(DefaultDriverOption.CONNECTION_MAX_REQUESTS)}
            |REQUEST_CONSISTENCY:${profile.getString(DefaultDriverOption.REQUEST_CONSISTENCY)}
@@ -88,6 +91,10 @@ object CassandraStore {
 
       cqlSession.execute(CassandraStore.chatTimelineTable)
       log.info("Executed \n" + CassandraStore.chatTimelineTable)
+
+      cqlSession.execute(CassandraStore.leasesTable)
+      log.info("Executed \n" + CassandraStore.leasesTable)
+
     } catch {
       case NonFatal(ex) =>
         log.error("Tables creation error", ex)
@@ -352,6 +359,9 @@ object CassandraStore {
       |   PRIMARY KEY ((chat, time_bucket), when)) WITH CLUSTERING ORDER BY (when DESC);
       |""".stripMargin
 
+  val leasesTable =
+    "CREATE TABLE IF NOT EXISTS leases (name text PRIMARY KEY, owner text) with default_time_to_live = 15"
+
   type StreamElement = (Long, CdcEnvelopeMessage.SealedValue)
 
   def updateChatDetails(
@@ -427,11 +437,16 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
         )
 
       val writeDetails =
-        cqlSession.prepare("INSERT INTO chat_details(chat, revision, participants) VALUES (?, ?, ?)")
+        cqlSession.prepare(
+          SimpleStatement
+            .builder("INSERT INTO chat_details(chat, revision, participants) VALUES (?, ?, ?)")
+            .setExecutionProfileName(profileName)
+            .build()
+        )
 
       //
-      val (buffer, src) = Source.queue[StreamElement](1 << 7).preMaterialize()
-      src
+      val (queue, queueSrc) = Source.queue[StreamElement](1 << 7).preMaterialize()
+      queueSrc
         .mapAsync(writeParallelism) {
           case (revision: Long, cdc: CdcEnvelopeMessage.SealedValue) =>
             cdc match {
@@ -463,11 +478,11 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
           case CdcEnvelope.Empty =>
             Future.failed(new Exception("Empty"))
           case payload: NonEmpty =>
-            buffer.offer((revision, payload.asMessage.sealedValue)) match {
+            queue.offer((revision, payload.asMessage.sealedValue)) match {
               case QueueOfferResult.Enqueued =>
                 Future.successful(Done)
               case QueueOfferResult.Dropped =>
-                logger.warn("ChatDetailsStore overflow queue.size={}", buffer.size())
+                logger.warn("ChatDetailsStore overflow queue.size={}", queue.size())
                 // Chat should resent all messages after timeout
                 Future.successful(Done)
               case QueueOfferResult.Failure(cause) =>
