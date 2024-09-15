@@ -129,7 +129,7 @@ object Guardian {
             val sharding = ClusterSharding(sys)
 
             val allocationStrategy = new org.apache.pekko.cluster.sharding.ConsistentHashingAllocation(4)
-            val chatUserRegion: ActorRef[ChatCmd] = sharding.init(
+            val chatRoomRegion: ActorRef[ChatCmd] = sharding.init(
               Entity(ChatRoom.TypeKey)(entityCtx => ChatRoom(ChatName(entityCtx.entityId), appCfg))
                 .withSettings(
                   ClusterShardingSettings(sys)
@@ -148,10 +148,10 @@ object Guardian {
             val (cassandraSink, cks) = CassandraStore.mkCassandraSink(cluster.selfMember.details3())
             kss.put(ChatName("cassandra.0"), cks)
 
-            val chatRoomRegion: ActorRef[ChatRoomCmd] =
+            val chatRoomSessionRegion: ActorRef[ChatRoomCmd] =
               sharding.init(
                 Entity(ChatRoomSession.TypeKey)(entityCtx =>
-                  ChatRoomSession(ChatName(entityCtx.entityId), chatUserRegion, kss, cassandraSink)
+                  ChatRoomSession(ChatName(entityCtx.entityId), chatRoomRegion, kss, cassandraSink)
                 )
                   .withSettings(
                     ClusterShardingSettings(sys)
@@ -169,8 +169,8 @@ object Guardian {
 
             val grpcService: HttpRequest => Future[HttpResponse] =
               ServiceHandler.concatOrNotFound(
-                ChatRoomHandler.partial(new ChatRoomApi(appCfg, chatUserRegion, chatRoomRegion, kss)),
-                server.grpc.admin.AdminHandler.partial(new AdminApi(appCfg, chatUserRegion)),
+                ChatRoomHandler.partial(new ChatRoomApi(appCfg, chatRoomRegion, chatRoomSessionRegion, kss)),
+                server.grpc.admin.AdminHandler.partial(new AdminApi(appCfg, chatRoomRegion)),
                 ServerReflection.partial(List(server.grpc.chat.ChatRoom, server.grpc.admin.Admin)),
               )
 

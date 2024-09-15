@@ -10,12 +10,12 @@ extension (member: Member) {
     if (upNumber == other.upNumber) Member.addressOrdering.compare(address, other.address) < 0 else upNumber < other.upNumber
    */
   def details(): String =
-    s"${member.uniqueAddress.address}/UpNum(${member.upNumber})/Ver(${member.appVersion}))"
+    s"${member.uniqueAddress.address}/UpNum(${member.upNumber})/AppVer(${member.appVersion}))"
   // `UpNum` is monotonically growing sequence number which increases each time new incarnation of the process starts.
 
   def details2(): String =
     s"${member.uniqueAddress.address}:${member.upNumber}"
 
   def details3(): String =
-    s"${member.uniqueAddress.address.host.getOrElse("")},UpNum(${member.upNumber}),Ver(${member.appVersion}))"
+    s"${member.uniqueAddress.address.host.getOrElse("")},UpNum(${member.upNumber}),AppVer(${member.appVersion}))"
 }

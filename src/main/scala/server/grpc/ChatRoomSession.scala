@@ -20,7 +20,7 @@ import cluster.sharding.typed.ShardingMessageExtractor
 
 object ChatRoomSession {
 
-  val TypeKey = EntityTypeKey[ChatRoomCmd]("session")
+  val TypeKey = EntityTypeKey[ChatRoomCmd]("cr-session")
 
   def shardingMessageExtractor(): ShardingMessageExtractor[ChatRoomCmd, ChatRoomCmd] =
     new ShardingMessageExtractor[ChatRoomCmd, ChatRoomCmd] {
@@ -40,7 +40,7 @@ object ChatRoomSession {
   final case class ChatRoomState(
       chatName: ChatName,
       cassandraMergeHubSink: Sink[ServerCmd, NotUsed],
-      online: HashSet[Participant] = HashSet.empty[Participant],
+      onlineUsers: HashSet[Participant] = HashSet.empty[Participant],
       recentHistory: Seq[ServerCmd] = Seq.empty,
       ks: Option[KillSwitch] = None,
       maybeHub: Option[ChatRoomHub] = None)
@@ -71,7 +71,7 @@ object ChatRoomSession {
       case ConnectRequest(chatName, user, otp, replyTo) =>
         // import org.apache.pekko.actor.typed.scaladsl.LoggerOps
         // logger.info2("{}: Chat({}) already exists", ctx.self.path, chat.raw())
-        ctx.log.info("Connection request from User({}). Online: [{}]", user.raw(), state.online.mkString(","))
+        ctx.log.info("Connection request from User({}). Online: [{}]", user.raw(), state.onlineUsers.mkString(","))
         val replyTo0 = ReplyTo[ChatReply].toBase(replyTo)
         given sys: ActorSystem[?] = ctx.system
         state.maybeHub match {
@@ -93,7 +93,7 @@ object ChatRoomSession {
               )
             )
             ctx.log.info("User({}) Start session:{}", user.raw(), otp.raw())
-            active(state.copy(online = state.online + user), chatRegion, kss)
+            active(state.copy(onlineUsers = state.onlineUsers + user), chatRegion, kss)
 
           case None =>
             val ((sink, ks), src) =
@@ -150,14 +150,14 @@ object ChatRoomSession {
 
             ctx.log.info(s"User({}). Start session:{}", user.raw(), otp.raw())
             active(
-              state.copy(online = state.online + user, ks = Some(ks), maybeHub = Some(chatRoomHub)),
+              state.copy(onlineUsers = state.onlineUsers + user, ks = Some(ks), maybeHub = Some(chatRoomHub)),
               chatRegion,
               kss,
             )
         }
 
       case Disconnect(user, chatName, otp) =>
-        val updatedOnlineUsers = state.online - user
+        val updatedOnlineUsers = state.onlineUsers - user
         ctx.log.info(s"User({}). End session:{}", user.raw(), otp.raw())
         if (updatedOnlineUsers.isEmpty) {
           state.ks.foreach(_.shutdown())
@@ -166,7 +166,7 @@ object ChatRoomSession {
           chatRegion.tell(StopChatEntity(chatName))
           Behaviors.stopped
         } else {
-          active(state.copy(online = updatedOnlineUsers), chatRegion, kss)
+          active(state.copy(onlineUsers = updatedOnlineUsers), chatRegion, kss)
         }
     }
 }

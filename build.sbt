@@ -1,18 +1,21 @@
 val scala3Version = "3.5.0"
 
 val pekkoV = "1.1.1"
-val logbackVersion = "1.3.14" //1.5.7
+val logbackVersion = "1.3.14" //"1.5.7"
 
 val pekkoHttpV = "1.1.0-M1"
 val PekkoManagementVersion = "1.1.0-M1"
+val slf4jVersion = "2.0.16"
 
 val ProjectName = "safer-chat"
 
-//https://repo1.maven.org/maven2/com/lihaoyi/ammonite-compiler_3.4.2/3.0.0-M2-15-9bed9700/
-//val AmmoniteVersion = "3.0.0-M2-15-9bed9700"
+//https://repo1.maven.org/maven2/com/lihaoyi/ammonite-compiler_3.5.0/3.0.0-M2-30-486378af/
+val AmmoniteVersion = "3.0.0-M2-30-486378af"
 resolvers += "Apache Snapshots" at "https://repository.apache.org/content/repositories/snapshots/"
 
 val AppVersion = "0.1.0"
+
+//val scalafixVersion = _root_.scalafix.sbt.BuildInfo.scalafixVersion
 
 //show scalacOptions
 lazy val scalac3Settings = Seq(
@@ -24,6 +27,7 @@ lazy val scalac3Settings = Seq(
     "-Xkind-projector",
     "-Wsafe-init", // guards against forward access reference
     "-language:adhocExtensions",
+    "-Xtarget:17",
     "-release:17",
     //https://github.com/apache/pekko-grpc/blob/88e8567e2decbca19642e5454729aa78cce455eb/project/Common.scala#L72
     "-Wconf:msg=Marked as deprecated in proto file:silent",
@@ -44,12 +48,16 @@ lazy val root = project
     organization := "haghard",
     version := AppVersion,
     scalaVersion := scala3Version,
+
+    semanticdbEnabled := true,
+    semanticdbVersion := scalafixSemanticdb.revision,
+
     usePipelining := true,
     startYear := Some(2024),
     developers := List(Developer("haghard", "Vadim Bondarev", "haghard84@gmail.com", url("https://github.com/haghard"))),
 
     // sbt headerCreate
-    licenses += ("Apache-2.0", new URL("https://www.apache.org/licenses/LICENSE-2.0.txt")),
+    licenses += ("Apache-2.0", new java.net.URL("https://www.apache.org/licenses/LICENSE-2.0.txt")),
     headerMappings := headerMappings.value + (HeaderFileType.scala -> HeaderCommentStyle.cppStyleLineComment),
     headerLicense := Some(
       HeaderLicense.Custom(
@@ -59,13 +67,9 @@ lazy val root = project
            |""".stripMargin
       )
     ),
+    
     libraryDependencies ++= Seq(
-      /*
-        show dependencyList
-        org.apache.pekko:pekko-actor_3:1.0.2
-        org.apache.pekko:pekko-discovery_3:1.0.2
-      */
-
+      //  show dependencyList
       "org.apache.pekko" %% "pekko-http" % pekkoHttpV,
       "org.apache.pekko" %% "pekko-http-spray-json"% pekkoHttpV,
 
@@ -94,12 +98,15 @@ lazy val root = project
 
       "org.apache.pekko" %% "pekko-slf4j" % pekkoV,
 
+      //"ch.epfl.scala" %% "scalafix-core" % scalafixVersion,
+
       //https://nightlies.apache.org/pekko/docs/pekko/1.0.2/docs/additional/deploying.html
       //https://github.com/apache/pekko-samples/blob/main/pekko-sample-cluster-kubernetes-scala/build.sbt
       //"ch.qos.logback" % "logback-classic" % "1.2.11",
 
       //https://github.com/apache/pekko/blob/ad55d1c4142b24e51f6cc386fd0e5ad9fe77eafa/project/Dependencies.scala#L39C25-L39C31
       "ch.qos.logback" % "logback-classic" % logbackVersion,
+      "org.slf4j" % "slf4j-api" % slf4jVersion,
 
       "com.madgag.spongycastle" % "core" % "1.58.0.0",
       "org.bouncycastle" % "bcpkix-jdk18on" % "1.78.1",
@@ -114,9 +121,9 @@ lazy val root = project
       "com.github.bastiaanjansen" % "otp-java" % "2.0.3",
       "com.datastax.oss" % "java-driver-core" % "4.17.0",
 
-      /*("com.lihaoyi" % "ammonite" % AmmoniteVersion % "test" cross CrossVersion.full)
+      ("com.lihaoyi" % "ammonite" % AmmoniteVersion % "test" cross CrossVersion.full)
         .exclude("com.thesamet.scalapb", "lenses_2.13")
-        .exclude("com.thesamet.scalapb", "scalapb-runtime_2.13"),*/
+        .exclude("com.thesamet.scalapb", "scalapb-runtime_2.13"),
 
       //https://github.com/scalag/scalag/blob/master/build.sbt
       //https://github.com/dialex/JColor
@@ -190,7 +197,7 @@ lazy val root = project
       "-Xms256m",
       "-Xmx256m",
       "-XX:+AlwaysPreTouch", //
-      
+
       //"-XX:ThreadStackSize=1048576", //[0 ... 1048576]
       //"-XX:ReservedCodeCacheSize=251658240",
       "-XX:MaxDirectMemorySize=64m",
@@ -236,7 +243,8 @@ lazy val root = project
       */
     ),
 
-    //comment out for test:run
+    //comment out to run ammonite (test:run)
+
     run / fork := true,
     run / connectInput := true,
   )
