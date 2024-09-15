@@ -98,8 +98,9 @@ object AppBootstrap {
       kss: ConcurrentHashMap[ChatName, KillSwitch],
     )(using sys: ActorSystem[?]
     ): Unit = {
-    val ua = Cluster(sys).selfMember.uniqueAddress
     import sys.executionContext
+
+    val ua = Cluster(sys).selfMember.uniqueAddress
     val logger = sys.log
     val host = sys.settings.config.getString("pekko.remote.artery.canonical.hostname")
     val phaseTimeout =
@@ -109,7 +110,7 @@ object AppBootstrap {
 
     Http()(sys)
       .newServerAt(host, appCfg.grpcPort)
-      .enableHttps(serverHttpContext(sys.log))
+      // .enableHttps(serverHttpContext(sys.log))
       .bind(grpcService)
       .onComplete {
         case Failure(ex) =>
@@ -180,42 +181,22 @@ object AppBootstrap {
             }
           }
 
-          // forcefully kills connections that are still open
-          shutdown.addTask(PhaseServiceStop, "close.connections") { () =>
-            Http().shutdownAllConnectionPools().map { _ =>
-              logger.info("★ ★ ★ CoordinatedShutdown.4 [close.connections] ★ ★ ★")
-              Done
-            }
-          }
-
           // PhaseServiceRequestsDone - process in-flight requests
           shutdown.addTask(PhaseServiceRequestsDone, "kss.shutdown") { () =>
             Future {
               kss.values().forEach(_.abort(new Exception("abort")))
-              logger.info(s"★ ★ ★ CoordinatedShutdown.5 [kss.shutdown.${kss.size()} ]  ★ ★ ★")
+              logger.info(s"★ ★ ★ CoordinatedShutdown.4 [kss.shutdown.${kss.size()} ]  ★ ★ ★")
               Done
             }
           }
 
-          // Best-effort attempt to cleanup leases without waiting for TTL
-          /*shutdown.addTask(PhaseClusterExitingDone, "release.lease") { () =>
-            val leaseOwner = leaseOwnerFromAkkaMember(sys.name, ua.address)
-            val lease = org
-              .apache
-              .pekko
-              .coordination
-              .lease
-              .scaladsl
-              .LeaseProvider(sys)
-              .getLease(s"schat-${CassandraLease.SbrPref}", CassandraLease.configPath, leaseOwner)
-
-            lease match {
-              case lease: CassandraLease =>
-                val msg = s"★ ★ ★ CoordinatedShutdown [release.lease] by $leaseOwner released on exit: {} ★ ★ ★"
-                lease.releaseOnExit(msg).map(_ => Done)
-              case _ => Future.successful(Done)
+          // forcefully kills connections that are still open
+          shutdown.addTask(PhaseServiceStop, "close.connections") { () =>
+            Http().shutdownAllConnectionPools().map { _ =>
+              logger.info("★ ★ ★ CoordinatedShutdown.5 [close.connections] ★ ★ ★")
+              Done
             }
-          }*/
+          }
 
           shutdown.addTask(PhaseBeforeClusterShutdown, "before-cluster-shutdown.0") { () =>
             Http()

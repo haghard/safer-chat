@@ -21,7 +21,7 @@ import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.grpc.GrpcClientSettings
 import org.apache.pekko.stream.scaladsl.Source
 import server.grpc.chat.{ ClientCmd, ServerCmd, UserInfo }
-import org.apache.pekko.cassandra.CassandraStore.{ formatter, SERVER_DEFAULT_TZ }
+import org.apache.pekko.cassandra.ChatRoomCassandraStore.{ formatter, SERVER_DEFAULT_TZ }
 
 import scala.util.control.NonFatal
 
@@ -32,7 +32,6 @@ import shared.Domain.*
 object ChatRoomClient {
 
   val APP_NAME = "safer-chat"
-  val Ottawa = server.grpc.chat.Coords(45.41875, -75.70144560830724)
   val Toronto = server.grpc.chat.Coords(43.911806, -80.099738)
   val chatName = ChatName("aaa") // bbb
   sys.props += "APP_VERSION" -> server.grpc.BuildInfo.version
@@ -63,7 +62,7 @@ object ChatRoomClient {
       userPubKeys: java.util.concurrent.ConcurrentHashMap[String, java.security.interfaces.RSAPublicKey],
     )(using
       sys: ActorSystem[Nothing],
-      client: server.grpc.chat.ChatRoomClient,
+      client: server.grpc.chat.ChatRoomSessionClient,
       logger: Logger,
     ): Future[Done] = {
 
@@ -95,7 +94,7 @@ object ChatRoomClient {
             Participant(user.handle.toString),
             UnsafeByteOperations.unsafeWrap(user.asX509.getBytes(StandardCharsets.UTF_8)),
           ),
-          Ottawa,
+          Toronto,
           Otp(otp),
         )
       ) ++
@@ -123,7 +122,7 @@ object ChatRoomClient {
                 Participant(user.handle.toString),
                 UnsafeByteOperations.unsafeWrap(user.asX509.getBytes(StandardCharsets.UTF_8)),
               ),
-              Ottawa,
+              Toronto,
               Otp(otp),
             )
             cmd
@@ -187,8 +186,7 @@ object ChatRoomClient {
 
   @main def main(args: String*): Unit = {
     val userName = if (args.isEmpty) throw new Exception("Expected <username> !") else args(0)
-    val cfg =
-      ConfigFactory.load("client.conf")
+    val cfg = ConfigFactory.load("client.conf")
     // ConfigFactory.parseString("pekko.actor.provider=local").withFallback(ConfigFactory.load())
 
     val appConf = {
@@ -205,8 +203,15 @@ object ChatRoomClient {
     given ec: ExecutionContext = sys.executionContext
     given logger: Logger = sys.log
 
-    given grpcClient: server.grpc.chat.ChatRoomClient =
-      server.grpc.chat.ChatRoomClient(GrpcClientSettings.fromConfig("server.grpc.ChatRoom").withUserAgent(userName))
+    given grpcClient: server.grpc.chat.ChatRoomSessionClient = {
+      println(sys.settings.config.getConfig("pekko.grpc.client").toString)
+      server
+        .grpc
+        .chat
+        .ChatRoomSessionClient(
+          GrpcClientSettings.fromConfig("server.grpc.ChatRoomSession").withUserAgent(userName)
+        )
+    }
 
     /*
     val u = ChatUser.generate()
@@ -228,7 +233,7 @@ object ChatRoomClient {
 
     val done = postMessages(chatUsr, defaultUsr, appConf, userName, userPubKeys)
     done.onComplete { code =>
-      println(s"Exit: $code")
+      sys.log.warn(s"Exit: $code")
       grpcClient.close().onComplete { _ =>
         sys.log.warn(s"========= Participants =========")
         userPubKeys.keySet().forEach(key => sys.log.warn(s"User($key)"))

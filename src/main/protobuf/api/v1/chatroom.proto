@@ -1,57 +1,19 @@
 syntax = "proto3";
 
 import "scalapb/scalapb.proto";
-import "google/protobuf/any.proto";
+import "google/protobuf/empty.proto";
 import "google/protobuf/wrappers.proto";
-import "google/protobuf/timestamp.proto";
 
 option java_multiple_files = true;
 
-package server.grpc.chat;
+import "domain/v1/chat.proto";
+import "api/v1/request.proto";
+
+package server.grpc.admin;
 
 service ChatRoom {
-
-  rpc Post (stream ClientCmd) returns (stream ServerCmd) {}
-}
-
-option (scalapb.options) = {
-  lenses: true,
-  preserve_unknown_fields: false,
-  no_default_values_in_constructor: false,
-  no_primitive_wrappers: true,
-  single_file: true,
-  preamble: "sealed trait Cmd extends scalapb.GeneratedMessage"
-};
-
-message UserInfo {
-  string user = 1 [(scalapb.field).type = "shared.Domain.Participant"];
-  bytes pubKey = 2;
-}
-
-message Coords {
-  double lat = 1;
-  double lon = 2;
-}
-
-message ClientCmd {
-  option (scalapb.message).extends = "Cmd";
-  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
-  map<string, bytes> content = 2;
-  UserInfo userInfo = 3 [(scalapb.field).no_box = true];
-  Coords coords = 4 [(scalapb.field).no_box = true];
-  string otp = 5 [(scalapb.field).type = "shared.Domain.Otp"];
-}
-
-message ServerCmd {
-  option (scalapb.message).extends = "Cmd";
-  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
-  map<string, bytes> content = 2;
-  UserInfo userInfo = 3 [(scalapb.field).no_box = true];
-  string timeUuid = 4 [(scalapb.field).type = "shared.Domain.CassandraTimeUUID"];
-  CmdTag tag = 5;
-}
-
-enum CmdTag {
-  PUT = 0;
-  GET = 1;
+  //google.protobuf.Empty
+  rpc AddChat (com.domain.chat.request.ChatReq) returns (com.domain.chat.ChatReply) {}
+  rpc AddUser (com.domain.chat.request.UserReq) returns (com.domain.chat.ChatReply) {}
+  rpc RmUser (com.domain.chat.request.UserReq) returns (com.domain.chat.ChatReply) {}
 }

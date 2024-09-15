@@ -16,7 +16,7 @@ import org.slf4j.Logger
 import server.grpc.api.*
 import org.apache.pekko.actor.typed.*
 import org.apache.pekko.actor.typed.scaladsl.*
-import org.apache.pekko.cassandra.CassandraStore
+import org.apache.pekko.cassandra.ChatRoomCassandraStore
 import org.apache.pekko.cluster.Member
 import org.apache.pekko.cluster.sharding.typed.*
 import org.apache.pekko.cluster.sharding.typed.scaladsl.*
@@ -24,7 +24,8 @@ import org.apache.pekko.cluster.typed.*
 import org.apache.pekko.grpc.scaladsl.*
 import org.apache.pekko.http.scaladsl.model.*
 import org.apache.pekko.stream.*
-import server.grpc.chat.ChatRoomHandler
+import server.grpc.admin.ChatRoomHandler
+import server.grpc.chat.ChatRoomSessionHandler
 import shared.AppConfig
 import shared.Domain.ChatName
 
@@ -45,15 +46,6 @@ object Guardian {
         given sys: ActorSystem[?] = ctx.system
         given cluster: Cluster = Cluster(sys)
         given logger: Logger = sys.log
-
-        /*
-          ctx.actorOf(org.apache.pekko.actor.Props(new org.apache.pekko.event.slf4j.Slf4jLogger), "logger") ! org
-          .apache
-          .pekko
-          .event
-          .Logging
-          .InitializeLogger(new EventStream(sys.toClassic, false))
-         */
 
         cluster
           .subscriptions
@@ -110,7 +102,6 @@ object Guardian {
                       .mkString("\n")}
                      |Args:${ManagementFactory.getRuntimeMXBean().getInputArguments()}
                      |★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★
-                     |-XX:MaxRAMPercentage=${server.grpc.jvm.MemoryUtil.determineReasonableMaxRAMPercentage()}
                      |👍✅🚀🧪❌😄📣🔥🐳🚨😱🥳💰⚡️🚨😱🥳
                      |---------------------------------------------------------------------------------
                      |""".stripMargin
@@ -129,29 +120,31 @@ object Guardian {
             val sharding = ClusterSharding(sys)
 
             val allocationStrategy = new org.apache.pekko.cluster.sharding.ConsistentHashingAllocation(4)
-            val chatRoomRegion: ActorRef[ChatCmd] = sharding.init(
-              Entity(ChatRoom.TypeKey)(entityCtx => ChatRoom(ChatName(entityCtx.entityId), appCfg))
-                .withSettings(
-                  ClusterShardingSettings(sys)
-                    .withPassivationStrategy(
-                      ClusterShardingSettings
-                        .PassivationStrategySettings
-                        .defaults
-                        .withIdleEntityPassivation(3.minutes)
-                    )
-                )
-                .withMessageExtractor(ChatRoom.shardingMessageExtractor())
-                .withStopMessage(StopChatEntity())
-                .withAllocationStrategy(allocationStrategy)
-            )
 
-            val (cassandraSink, cks) = CassandraStore.mkCassandraSink(cluster.selfMember.details3())
-            kss.put(ChatName("cassandra.0"), cks)
+            val chatRoomRegion: ActorRef[ChatCmd] =
+              sharding.init(
+                Entity(ChatRoom.TypeKey)(entityCtx => ChatRoom(ChatName(entityCtx.entityId), appCfg))
+                  .withSettings(
+                    ClusterShardingSettings(sys)
+                      .withPassivationStrategy(
+                        ClusterShardingSettings
+                          .PassivationStrategySettings
+                          .defaults
+                          .withIdleEntityPassivation(3.minutes)
+                      )
+                  )
+                  .withMessageExtractor(ChatRoom.shardingMessageExtractor())
+                  .withStopMessage(StopChatEntity())
+                  .withAllocationStrategy(allocationStrategy)
+              )
+
+            val (chatRoomSessionSink, ks) = ChatRoomCassandraStore.chatRoomSessionsSink(cluster.selfMember.details3())
+            kss.put(ChatName("cassandra.0"), ks)
 
             val chatRoomSessionRegion: ActorRef[ChatRoomCmd] =
               sharding.init(
                 Entity(ChatRoomSession.TypeKey)(entityCtx =>
-                  ChatRoomSession(ChatName(entityCtx.entityId), chatRoomRegion, kss, cassandraSink)
+                  ChatRoomSession(ChatName(entityCtx.entityId), chatRoomRegion, kss, chatRoomSessionSink)
                 )
                   .withSettings(
                     ClusterShardingSettings(sys)
@@ -169,9 +162,11 @@ object Guardian {
 
             val grpcService: HttpRequest => Future[HttpResponse] =
               ServiceHandler.concatOrNotFound(
-                ChatRoomHandler.partial(new ChatRoomApi(appCfg, chatRoomRegion, chatRoomSessionRegion, kss)),
-                server.grpc.admin.AdminHandler.partial(new AdminApi(appCfg, chatRoomRegion)),
-                ServerReflection.partial(List(server.grpc.chat.ChatRoom, server.grpc.admin.Admin)),
+                ChatRoomHandler.partial(new ChatRoomApi(appCfg, chatRoomRegion)),
+                ChatRoomSessionHandler.partial(
+                  new ChatRoomSessionApi(appCfg, chatRoomRegion, chatRoomSessionRegion, kss)
+                ),
+                ServerReflection.partial(List(server.grpc.admin.ChatRoom, server.grpc.chat.ChatRoomSession)),
               )
 
             AppBootstrap.grpc(appCfg, grpcService, kss)

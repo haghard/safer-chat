@@ -8,7 +8,7 @@ import "scalapb/scalapb.proto";
 
 option java_multiple_files = true;
 
-import "api/v1/chatroom.proto";
+import "api/v1/chatroomSession.proto";
 
 package com.domain.user;
 

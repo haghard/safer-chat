@@ -8,7 +8,7 @@ import scala.util.control.NonFatal
 import com.typesafe.config.ConfigFactory
 import org.apache.pekko
 import org.apache.pekko.actor.typed.ActorSystem
-import org.apache.pekko.cassandra.{ CassandraSessionExtension, CassandraStore }
+import org.apache.pekko.cassandra.*
 import shared.*
 
 object Bootstrap {
@@ -16,7 +16,6 @@ object Bootstrap {
 
   def run(): Unit = {
     sys.props += "APP_VERSION" -> server.grpc.BuildInfo.version
-    // sys.props += "slf4j.provider" -> "org.apache.pekko.event.slf4j.Slf4jLogger"
 
     given system: ActorSystem[Nothing] = {
       val cfg = ConfigFactory.load("application.conf").withFallback(ConfigFactory.load())
@@ -49,7 +48,7 @@ object Bootstrap {
 
     try {
       val cqlSession = CassandraSessionExtension(system).cqlSession
-      CassandraStore.createTables(cqlSession, system.log)
+      ChatRoomCassandraStore.createTables(cqlSession, system.log)
     } catch {
       case NonFatal(ex) =>
         system.log.error(s"CassandraSession error", ex)
@@ -66,6 +65,5 @@ object Bootstrap {
         system.whenTerminated,
         system.settings.config.getDuration("pekko.coordinated-shutdown.default-phase-timeout").asScala,
       )
-
   }
 }

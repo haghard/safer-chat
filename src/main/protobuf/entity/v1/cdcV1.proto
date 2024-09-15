@@ -2,7 +2,7 @@ syntax = "proto3";
 
 import "scalapb/scalapb.proto";
 
-import "api/v1/chatroom.proto";
+import "api/v1/chatroomSession.proto";
 
 package com.domain.chat.cdc.v1;
 

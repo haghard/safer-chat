@@ -1,3 +1,7 @@
+// Copyright (c) 2024 by Vadim Bondarev
+// This software is licensed under the Apache License, Version 2.0.
+// You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0.
+
 package server.grpc
 
 import com.datastax.oss.driver.api.core.uuid.Uuids
@@ -20,7 +24,7 @@ import cluster.sharding.typed.ShardingMessageExtractor
 
 object ChatRoomSession {
 
-  val TypeKey = EntityTypeKey[ChatRoomCmd]("cr-session")
+  val TypeKey = EntityTypeKey[ChatRoomCmd]("chatroomSession")
 
   def shardingMessageExtractor(): ShardingMessageExtractor[ChatRoomCmd, ChatRoomCmd] =
     new ShardingMessageExtractor[ChatRoomCmd, ChatRoomCmd] {
@@ -39,7 +43,7 @@ object ChatRoomSession {
 
   final case class ChatRoomState(
       chatName: ChatName,
-      cassandraMergeHubSink: Sink[ServerCmd, NotUsed],
+      cassandraSink: Sink[ServerCmd, NotUsed],
       onlineUsers: HashSet[Participant] = HashSet.empty[Participant],
       recentHistory: Seq[ServerCmd] = Seq.empty,
       ks: Option[KillSwitch] = None,
@@ -97,7 +101,6 @@ object ChatRoomSession {
 
           case None =>
             val ((sink, ks), src) =
-              // TODO: try this https://github.com/haghard/akka-pq/blob/master/src/main/scala/sample/blog/processes/StatefulProcess.scala
               MergeHub
                 .source[ClientCmd](perProducerBufferSize = 1)
                 .mapMaterializedValue { sink =>
@@ -115,7 +118,7 @@ object ChatRoomSession {
                 // .log(s"$chatName.hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}")(sys.toClassic.log)
                 // .via(StreamMonitor(s"$chatName.grpc-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}"))
                 .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
-                .alsoTo(state.cassandraMergeHubSink)
+                .alsoTo(state.cassandraSink)
                 .viaMat(KillSwitches.single)(Keep.both)
                 .toMat(
                   BroadcastHub
@@ -128,6 +131,7 @@ object ChatRoomSession {
                 .run()
 
             kss.put(chatName, ks)
+
             val chatRoomHub = ChatRoomHub(sink, src)
 
             val getRecentHistory =
@@ -148,7 +152,7 @@ object ChatRoomSession {
               )
             )
 
-            ctx.log.info(s"User({}). Start session:{}", user.raw(), otp.raw())
+            ctx.log.info(s"User({}). Started session:{}", user.raw(), otp.raw())
             active(
               state.copy(onlineUsers = state.onlineUsers + user, ks = Some(ks), maybeHub = Some(chatRoomHub)),
               chatRegion,
