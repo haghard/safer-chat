@@ -104,7 +104,7 @@ object ChatRoomSession {
               MergeHub
                 .source[ClientCmd](perProducerBufferSize = 1)
                 .mapMaterializedValue { sink =>
-                  ctx.log.info(s"MergeHub($chatName) materialization")
+                  ctx.log.info(s"MergeHub(${chatName.raw()}) materialization")
                   sink
                 }
                 .map(clientCmd =>
@@ -124,7 +124,7 @@ object ChatRoomSession {
                   BroadcastHub
                     .sink[ServerCmd](bufferSize = 1)
                     .mapMaterializedValue { src =>
-                      ctx.log.info("BroadcastHub($chatName) materialization"); src
+                      ctx.log.info(s"BroadcastHub(${chatName.raw()}) materialization"); src
                     }
                 )(Keep.both)
                 // .addAttributes(stream.ActorAttributes.supervisionStrategy { case NonFatal(ex) =>  stream.Supervision.Resume })

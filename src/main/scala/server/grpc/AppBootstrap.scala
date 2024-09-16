@@ -110,7 +110,7 @@ object AppBootstrap {
 
     Http()(sys)
       .newServerAt(host, appCfg.grpcPort)
-      // .enableHttps(serverHttpContext(sys.log))
+      .enableHttps(serverHttpContext(sys.log))
       .bind(grpcService)
       .onComplete {
         case Failure(ex) =>

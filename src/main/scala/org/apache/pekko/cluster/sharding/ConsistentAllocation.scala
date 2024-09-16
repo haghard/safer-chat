@@ -17,27 +17,26 @@ import org.apache.pekko.cluster.sharding.internal.AbstractLeastShardAllocationSt
 import org.apache.pekko.event.*
 import org.apache.pekko.routing.ConsistentHash
 
-object ConsistentHashingAllocation {
+object ConsistentAllocation {
   val virtualNodesFactor = 3
   val JoiningCluster: Set[MemberStatus] = Set(Joining, WeaklyUp)
 
   val empty = Future.successful(Set.empty[ShardId])
 }
 
-final class ConsistentHashingAllocation(rebalanceLimit: Int) extends ActorSystemDependentAllocationStrategy {
+final class ConsistentAllocation(rebalanceLimit: Int) extends ActorSystemDependentAllocationStrategy {
 
-  import ConsistentHashingAllocation.empty
+  import ConsistentAllocation.empty
 
-  private var cluster: Cluster = scala.compiletime.uninitialized
-  private var log0: LoggingAdapter = scala.compiletime.uninitialized
+  var cluster: Cluster = scala.compiletime.uninitialized
+  var log0: LoggingAdapter = scala.compiletime.uninitialized
 
-  private var hashedByNodes: Vector[Address] = Vector.empty
-  private var consistentHashing: ConsistentHash[Address] =
-    ConsistentHash(Nil, ConsistentHashingAllocation.virtualNodesFactor)
+  var hashedByNodes: Vector[Address] = Vector.empty
+  var ring: ConsistentHash[Address] = ConsistentHash(Nil, ConsistentAllocation.virtualNodesFactor)
 
   override def start(system: ActorSystem): Unit = {
     cluster = Cluster(system)
-    log0 = Logging(system, classOf[ConsistentHashingAllocation])
+    log0 = Logging(system, classOf[ConsistentAllocation])
   }
 
   protected def log: LoggingAdapter = log0
@@ -53,7 +52,7 @@ final class ConsistentHashingAllocation(rebalanceLimit: Int) extends ActorSystem
     ): Future[ActorRef] = {
     val nodes = nodesForRegions(currentShardAllocations)
     updateHashing(nodes)
-    val node = consistentHashing.nodeFor(shardId)
+    val node = ring.nodeFor(shardId)
     log.info(s"Allocate Shard($shardId) on ${node.host.getOrElse("")}")
 
     currentShardAllocations.keysIterator.find(region => nodeForRegion(region) == node) match {
@@ -92,7 +91,7 @@ final class ConsistentHashingAllocation(rebalanceLimit: Int) extends ActorSystem
           case (currentRegion, shardIds) =>
             shardIds.foreach { shardId =>
               if (lessThanLimit() && !rebalanceInProgress.contains(shardId)) {
-                val node = consistentHashing.nodeFor(shardId)
+                val node = ring.nodeFor(shardId)
                 regionByNode.get(node) match {
                   case Some(region) =>
                     if (region != currentRegion) {
@@ -132,7 +131,7 @@ final class ConsistentHashingAllocation(rebalanceLimit: Int) extends ActorSystem
       if (log.isDebugEnabled)
         log.debug("Update consistent hashing nodes [{}]", sortedNodes.mkString(", "))
       hashedByNodes = sortedNodes
-      consistentHashing = ConsistentHash(sortedNodes, ConsistentHashingAllocation.virtualNodesFactor)
+      ring = ConsistentHash(sortedNodes, ConsistentAllocation.virtualNodesFactor)
     }
   }
 
@@ -142,19 +141,19 @@ final class ConsistentHashingAllocation(rebalanceLimit: Int) extends ActorSystem
     regionEntries.headOption match {
       case None => false // empty list of regions, probably not a good time to rebalance...
       case Some(firstRegion) =>
-        def allNodesSameVersion() =
+        def allNodesSameVersion: Boolean =
           regionEntries.forall(_.member.appVersion == firstRegion.member.appVersion)
 
-        def neededMembersReachable =
+        def neededMembersReachable: Boolean =
           !clusterState.members.exists(m => m.dataCenter == selfMember.dataCenter && clusterState.unreachable(m))
 
         // No members in same dc joining, we want that to complete before rebalance, such nodes should reach Up soon
-        def membersInProgressOfJoining =
+        def membersInProgressOfJoining: Boolean =
           clusterState
             .members
-            .exists(m => m.dataCenter == selfMember.dataCenter && ConsistentHashingAllocation.JoiningCluster(m.status))
+            .exists(m => m.dataCenter == selfMember.dataCenter && ConsistentAllocation.JoiningCluster(m.status))
 
-        allNodesSameVersion() && neededMembersReachable && !membersInProgressOfJoining
+        allNodesSameVersion && neededMembersReachable && !membersInProgressOfJoining
     }
 
   private def regionEntriesFor(currentShardAllocations: Map[ActorRef, immutable.IndexedSeq[ShardId]])

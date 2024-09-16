@@ -50,13 +50,16 @@ object ChatRoomCassandraStore {
   val UTC = ZoneId.of(java.util.TimeZone.getTimeZone("UTC").getID)
   val SERVER_DEFAULT_TZ = ZoneId.of(java.util.TimeZone.getDefault().getID())
 
+  given ord: scala.math.Ordering[ServerCmd] with {
+    def compare(x: ServerCmd, y: ServerCmd): Int =
+      x.timeUuid.toUnixTs().compareTo(y.timeUuid.toUnixTs())
+  }
+
   def createTables(cqlSession: CqlSession, log: Logger): Unit =
     try {
-      Thread.sleep(1000)
       cqlSession.getMetrics().ifPresent { metrics =>
-        // CassandraMetricsRegistry
         // CassandraMetricsRegistry(system).addMetrics(metricsCategory, metrics.getRegistry)
-        // metrics.getRegistry().getMetrics.keySet().forEach(println(_))
+        // metrics.getRegistry()
       }
 
       val config = cqlSession.getContext().getConfig()
@@ -69,9 +72,15 @@ object ChatRoomCassandraStore {
            |CONNECTION_MAX_REQUESTS:${profile.getInt(DefaultDriverOption.CONNECTION_MAX_REQUESTS)}
            |REQUEST_CONSISTENCY:${profile.getString(DefaultDriverOption.REQUEST_CONSISTENCY)}
            |--------------------------
-           |${profile.toString()}
-           |--------------------------
            |""".stripMargin
+
+      val it = profile.entrySet().iterator()
+      log.info("★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★  CASSANDRA: all settings ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★")
+      while (it.hasNext()) {
+        val e = it.next()
+        println(s"${e.getKey()}=${e.getValue()}")
+      }
+      log.info("★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★")
 
       // https://github.com/apache/cassandra-java-driver/blob/4.x/examples/src/main/java/com/datastax/oss/driver/examples/basic/ReadTopologyAndSchemaMetadata.java
       log.info("★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★  CASSANDRA: Token ranges ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★")
@@ -235,14 +244,20 @@ object ChatRoomCassandraStore {
       .to(Sink.foreach(cnt => log.warning(s" ★ ★ ★ ★ $msg NumOfMsg:$cnt in last $duration")))
       .withAttributes(Attributes.inputBuffer(1, 1))
 
-  def chatRoomSessionsSink(
-      memberDetails: String
+  def chatRoomSessionsSink0(
+      clusterMemberDetails: String
     )(using system: ActorSystem[?]
     ): (Sink[ServerCmd, NotUsed], KillSwitch) = {
+    val parallelism = system.settings.config.getInt("cassandra.parallelism")
+    val maxBatchSize = system.settings.config.getInt("cassandra.max-batch-size")
     val classicSystem: org.apache.pekko.actor.ActorSystem = system.toClassic
+
     given logger: LoggingAdapter = classicSystem.log
+
     given sch: Scheduler = classicSystem.scheduler
+
     given ec: ExecutionContext = system.executionContext
+
     given cqlSession: CqlSession = CassandraSessionExtension(classicSystem).cqlSession
 
     given ps: PreparedStatement = cqlSession.prepare(
@@ -252,33 +267,81 @@ object ChatRoomCassandraStore {
         .build()
     )
 
-    given ord: scala.math.Ordering[ServerCmd] with {
-      def compare(x: ServerCmd, y: ServerCmd): Int =
-        x.timeUuid.toUnixTs().compareTo(y.timeUuid.toUnixTs())
-    }
+    // stops consuming from the tcp-receive buffer as soon as this buffer fills up.
+    MergeHub
+      .source[ServerCmd](perProducerBufferSize = 1)
+      .mapMaterializedValue { sink =>
+        logger.info(s"MergeHub(c*-hub) materialization")
+        sink
+      }
+      .via(StreamMonitor("c*-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}"))
+      .buffer(maxBatchSize, OverflowStrategy.backpressure)
+      .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
+      /*.withAttributes(
+        Attributes
+          .inputBuffer(maxBatchSize, maxBatchSize)
+          .and(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
+      )*/
+      //  https://github.com/jaceksokol/akka-stream-map-async-partition/blob/main/src/test/scala/com/github/jaceksokol/akka/stream/MapAsyncPartitionSpec.scala
+      .mapAsyncPartitioned(parallelism)(_.chat.raw()) { (cmd, _) =>
+        val fn = () => writeSingleMsg(cmd)
+        pattern.retry(fn, Int.MaxValue, 3.seconds).map(_ => cmd)(ExecutionContext.parasitic)
+      }
+      .via(
+        ThroughputMonitor(
+          20.seconds,
+          state => logger.warning(s"c*-throughput($clusterMemberDetails):${state.throughput()}"),
+        )
+      )
+      .viaMat(KillSwitches.single)(Keep.both)
+      .toMat(Sink.ignore)(Keep.left)
+      .run()
+  }
 
-    val maxBatchSize = system.settings.config.getInt("cassandra.max-batch-size") // 8
+  def chatRoomSessionsSink(
+      clusterMemberDetails: String
+    )(using system: ActorSystem[?]
+    ): (Sink[ServerCmd, NotUsed], KillSwitch) = {
+    val parallelism = system.settings.config.getInt("cassandra.parallelism")
+    val maxBatchSize = system.settings.config.getInt("cassandra.max-batch-size")
+    val classicSystem: org.apache.pekko.actor.ActorSystem = system.toClassic
 
+    given logger: LoggingAdapter = classicSystem.log
+
+    given sch: Scheduler = classicSystem.scheduler
+
+    given ec: ExecutionContext = system.executionContext
+
+    given cqlSession: CqlSession = CassandraSessionExtension(classicSystem).cqlSession
+
+    given ps: PreparedStatement = cqlSession.prepare(
+      SimpleStatement
+        .builder("INSERT INTO chat.timeline(chat, time_bucket, message, when) VALUES (?,?,?,?)")
+        .setExecutionProfileName(profileName)
+        .build()
+    )
+
+    // keeps consuming from the the receive-buffer and aggregate state in memory
     MergeHub
       .source[ServerCmd](perProducerBufferSize = 1)
       // .log("cassandra-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}")(logger)
-      .withAttributes(
-        Attributes
-          .inputBuffer(maxBatchSize, (maxBatchSize * 1.5).toInt)
-          .and(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
+      .buffer(maxBatchSize, OverflowStrategy.backpressure)
+      .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
+      .via(
+        StreamMonitor("c*-hub", cmd => s"${cmd.chat.raw()}.${cmd.userInfo.user.raw()} at ${cmd.timeUuid.toUnixTs()}")
       )
-      .via(StreamMonitor("sessions-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}"))
       .viaMat(KillSwitches.single)(Keep.both)
-      .groupedWithin(maxBatchSize, 50.millis)
+      .groupedWithin(maxBatchSize, 100.millis)
       // .wireTap(printStats("CassandraSink.stats:", 30.seconds))
       .via(
         ThroughputMonitor(
-          30.seconds,
-          state => logger.warning(s"throughput($memberDetails):${state.throughput()}"),
+          20.seconds,
+          state => logger.warning(s"c*-throughput($clusterMemberDetails):${state.throughput()}"),
         )
       )
       .to(
         Sink.foreachAsync(1) { (messages: Seq[ServerCmd]) =>
+          // It safe to use Future.traverse because of maxBatchSize
           Future
             .traverse(messages.groupBy(_.chat.raw()).values) { batchPerChat =>
               val writeFunc =
@@ -294,9 +357,10 @@ object ChatRoomCassandraStore {
         }
       )
       .run()
+  }
 
-    // keeps consuming from the receive-buffer and aggregate state in memory
-    /*MergeHub
+  // keeps consuming from the receive-buffer and aggregate state in memory
+  /*MergeHub
       .source[ServerCmd](perProducerBufferSize = 1)
       // .log("cassandra-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}")(logger)
       .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
@@ -327,7 +391,6 @@ object ChatRoomCassandraStore {
         }
       )
       .run()*/
-  }
 
   val chatDetailsTable =
     """
@@ -407,9 +470,11 @@ final class ChatRoomCassandraStore(system: ExtendedActorSystem) extends DurableS
 
   import system.dispatcher
 
+  val parallelism = system.settings.config.getInt("cassandra.parallelism")
+  val maxBatchSize = system.settings.config.getInt("cassandra.max-batch-size")
+
   override def scaladslDurableStateStore(): DurableStateStore[Any] =
     new DurableStateUpdateStore[ChatRoom.State]() {
-      val writeParallelism = system.settings.config.getInt("cassandra.parallelism")
 
       given typedSystem: ActorSystem[?] = system.toTyped
 
@@ -442,15 +507,14 @@ final class ChatRoomCassandraStore(system: ExtendedActorSystem) extends DurableS
             .build()
         )
 
-      val (queue, queueSrc) = Source.queue[StreamElement](1 << 7).preMaterialize()
+      val (queue, queueSrc) = Source.queue[StreamElement](maxBatchSize).preMaterialize()
 
       // `mapAsyncPartitioned` is used to mitigate the head-of-line blocking.
       // The main performance optimisation is related to the fact that values for
       // different keys can be processed independently in parallel.
       queueSrc
-        .mapAsyncPartitioned(writeParallelism)(extractPartition) { (out: StreamElement, _: ChatName) =>
-          val revision = out._1
-          val cdc = out._2
+        .mapAsyncPartitioned(parallelism)(extractPartition) { (out: StreamElement, _: ChatName) =>
+          val (revision, cdc) = out
           cdc match {
             case SealedValue.Created(chatCreated) =>
               ChatRoomCassandraStore.updateChatDetails(revision, chatCreated)

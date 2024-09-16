@@ -103,6 +103,7 @@ object Guardian {
                      |Args:${ManagementFactory.getRuntimeMXBean().getInputArguments()}
                      |★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★
                      |👍✅🚀🧪❌😄📣🔥🐳🚨😱🥳💰⚡️🚨😱🥳
+                     |🚶(leave) 🙄(roll eyes) 🔫 ("say that again, I double dare you") 👩‍💻😇
                      |---------------------------------------------------------------------------------
                      |""".stripMargin
                 )
@@ -119,7 +120,7 @@ object Guardian {
             val kss = new ConcurrentHashMap[ChatName, KillSwitch]()
             val sharding = ClusterSharding(sys)
 
-            val allocationStrategy = new org.apache.pekko.cluster.sharding.ConsistentHashingAllocation(4)
+            val allocationStrategy = new org.apache.pekko.cluster.sharding.ConsistentAllocation(2)
 
             val chatRoomRegion: ActorRef[ChatCmd] =
               sharding.init(
@@ -138,8 +139,9 @@ object Guardian {
                   .withAllocationStrategy(allocationStrategy)
               )
 
-            val (chatRoomSessionSink, ks) = ChatRoomCassandraStore.chatRoomSessionsSink(cluster.selfMember.details3())
-            kss.put(ChatName("cassandra.0"), ks)
+            val (chatRoomSessionSink, ks) =
+              ChatRoomCassandraStore.chatRoomSessionsSink(cluster.selfMember.details3())
+            kss.put(ChatName("cassandra.msg.writer"), ks)
 
             val chatRoomSessionRegion: ActorRef[ChatRoomCmd] =
               sharding.init(
