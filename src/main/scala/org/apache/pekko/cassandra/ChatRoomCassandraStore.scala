@@ -97,11 +97,11 @@ object ChatRoomCassandraStore {
       log.info(profileConf)
       log.info("★ ★ " * 10)
 
-      cqlSession.execute(ChatRoomCassandraStore.chatDetailsTable)
-      log.info("Executed \n" + ChatRoomCassandraStore.chatDetailsTable)
+      cqlSession.execute(ChatRoomCassandraStore.chatDetailsDDL)
+      log.info("Executed \n" + ChatRoomCassandraStore.chatDetailsDDL)
 
-      cqlSession.execute(ChatRoomCassandraStore.chatTimelineTable)
-      log.info("Executed \n" + ChatRoomCassandraStore.chatTimelineTable)
+      cqlSession.execute(ChatRoomCassandraStore.chatTimelineDDL)
+      log.info("Executed \n" + ChatRoomCassandraStore.chatTimelineDDL)
 
     } catch {
       case NonFatal(ex) =>
@@ -392,7 +392,7 @@ object ChatRoomCassandraStore {
       )
       .run()*/
 
-  val chatDetailsTable =
+  val chatDetailsDDL =
     """
       |CREATE TABLE IF NOT EXISTS chat_details (
       |   chat text,
@@ -402,7 +402,7 @@ object ChatRoomCassandraStore {
       |);
       |""".stripMargin
 
-  val chatTimelineTable =
+  val chatTimelineDDL =
     """
       |CREATE TABLE IF NOT EXISTS timeline (
       |   chat text,
@@ -496,8 +496,8 @@ final class ChatRoomCassandraStore(system: ExtendedActorSystem) extends DurableS
             .build()
         )
 
-      cqlSession.execute(ChatRoomCassandraStore.chatDetailsTable)
-      cqlSession.execute(ChatRoomCassandraStore.chatTimelineTable)
+      cqlSession.execute(ChatRoomCassandraStore.chatDetailsDDL)
+      cqlSession.execute(ChatRoomCassandraStore.chatTimelineDDL)
 
       val getDetailsRevision =
         cqlSession.prepare(
@@ -508,6 +508,9 @@ final class ChatRoomCassandraStore(system: ExtendedActorSystem) extends DurableS
         )
 
       val (queue, queueSrc) = Source.queue[StreamElement](maxBatchSize).preMaterialize()
+
+      // TODO: ???
+      // queueSrc.to(CassandraSinkExtension(???).sink).run()
 
       // `mapAsyncPartitioned` is used to mitigate the head-of-line blocking.
       // The main performance optimisation is related to the fact that values for

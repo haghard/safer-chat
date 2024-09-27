@@ -35,14 +35,3 @@ message ParticipantAddedV2 {
   string chat = 2 [(scalapb.field).type = "shared.Domain.ChatName"];
   string replyTo = 3 [(scalapb.field).type = "shared.Domain.ReplyTo"];
 }
-
-
-
-message CdcEnvelope2 {
-  
-  oneof value {
-    ChatCreated created = 1;
-    ParticipantAdded added = 2 [deprecated = true];
-    ParticipantAddedV2 addedV2 = 3;
-  }
-}

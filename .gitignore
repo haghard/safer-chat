@@ -35,4 +35,4 @@ metals.sbt
 /safer-chat.keystore
 /ks/
 /cassandra-db/data/
-/src/main/resources/schat-cloud.zip
+/src/main/resources/astra/*

@@ -7,7 +7,7 @@ package org.apache.pekko.cassandra
 import org.apache.pekko.actor.*
 import com.datastax.oss.driver.api.core.*
 
-import java.nio.file.Paths
+//import java.nio.file.Paths
 
 object CassandraSessionExtension extends ExtensionId[CassandraSessionExtension] with ExtensionIdProvider {
 
@@ -21,16 +21,18 @@ object CassandraSessionExtension extends ExtensionId[CassandraSessionExtension] 
 }
 
 class CassandraSessionExtension(system: ActorSystem) extends Extension {
-  val cloudConfigPath = Paths.get("./src/main/resources/schat-cloud.zip")
+  // val cloudConfigPath = Paths.get("src/main/resources/schat-cloud.zip")
+
   val keyspace = system.settings.config.getString("cassandra.keyspace")
+  val astraUrl = classOf[CassandraSessionExtension.type].getResource("/astra/schat-cloud.zip")
 
   // https://docs.datastax.com/en/developer/java-driver/4.17/manual/core/
   val cqlSession = {
     val metricRegistry = new com.codahale.metrics.MetricRegistry()
 
-    val local = CqlSession
+    val session = CqlSession
       .builder()
-      // .withCloudSecureConnectBundle(cloudConfigPath)
+      .withCloudSecureConnectBundle(astraUrl)
       .withAuthCredentials(
         system.settings.config.getString("cassandra.username"),
         system.settings.config.getString("cassandra.psw"),
@@ -40,7 +42,7 @@ class CassandraSessionExtension(system: ActorSystem) extends Extension {
       // .addRequestTracker(new RequestLogger())
       .build()
 
-    local.execute(s"USE $keyspace")
-    local
+    session.execute(s"USE $keyspace")
+    session
   }
 }

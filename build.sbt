@@ -1,15 +1,15 @@
-val scala3Version = "3.5.0"
+val scala3Version = "3.5.1"
 
+//https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.1.html
 val pekkoV = "1.1.1"
 val logbackVersion = "1.3.14" //"1.5.7"
+val slf4jVersion = "2.0.16" //"1.7.36"
 
 val pekkoHttpV = "1.1.0-M1"
 val PekkoManagementVersion = "1.1.0-M1"
 
 val ProjectName = "safer-chat"
-
-//https://repo1.maven.org/maven2/com/lihaoyi/ammonite-compiler_3.5.0/3.0.0-M2-30-486378af/
-val AmmoniteVersion = "3.0.0-M2-30-486378af"
+val AmmoniteVersion = "3.0.0"
 
 val AppVersion = "0.1.0"
 
@@ -30,7 +30,7 @@ lazy val scalac3Settings = Seq(
     "-Wconf:msg=Marked as deprecated in proto file:silent",
     "-Wconf:msg=pattern selector should be an instance of Matchable:silent",
 
-    //"-Xfatal-warnings",
+    "-Xfatal-warnings",
 
     // "-Ytasty-reader",
     "-Wunused:imports",
@@ -73,14 +73,15 @@ lazy val root = project
 
       "org.apache.pekko" %% "pekko-protobuf-v3" % pekkoV,
       "org.apache.pekko" %% "pekko-actor-typed" % pekkoV,
-      ("org.apache.pekko" %% "pekko-cluster-sharding-typed" % pekkoV),
+      "org.apache.pekko" %% "pekko-cluster-sharding-typed" % pekkoV,
         //.excludeAll(ExclusionRule(organization = "org.apache.pekko", name = "pekko-protobuf-v3")),
+        //.exclude("org.slf4j", "slf4j-api")
+
       "org.apache.pekko" %% "pekko-distributed-data" % pekkoV,
       "org.apache.pekko" %% "pekko-persistence-typed" % pekkoV,
       "org.apache.pekko" %% "pekko-stream-typed" % pekkoV,
 
       "org.apache.pekko" %% "pekko-coordination" % pekkoV,
-
       "org.apache.pekko" %% "pekko-cluster-metrics" % pekkoV,
 
       "org.apache.pekko" %% "pekko-management" % PekkoManagementVersion,
@@ -100,9 +101,10 @@ lazy val root = project
 
       //https://github.com/apache/pekko/blob/ad55d1c4142b24e51f6cc386fd0e5ad9fe77eafa/project/Dependencies.scala#L39C25-L39C31
 
-      "ch.qos.logback" % "logback-core" % logbackVersion,
       "ch.qos.logback" % "logback-classic" % logbackVersion,
-      //"org.slf4j" % "slf4j-api" % slf4jVersion,
+      "org.slf4j" % "slf4j-api" % slf4jVersion,
+      //"org.slf4j" % "jul-to-slf4j" % slf4jVersion,
+      //"org.slf4j" % "log4j-over-slf4j" % slf4jVersion,
 
       "com.madgag.spongycastle" % "core" % "1.58.0.0",
       "org.bouncycastle" % "bcpkix-jdk18on" % "1.78.1",
@@ -119,7 +121,9 @@ lazy val root = project
 
       ("com.lihaoyi" % "ammonite" % AmmoniteVersion % "test" cross CrossVersion.full)
         .exclude("com.thesamet.scalapb", "lenses_2.13")
-        .exclude("com.thesamet.scalapb", "scalapb-runtime_2.13"),
+        .exclude("com.thesamet.scalapb", "scalapb-runtime_2.13")
+        .exclude("org.slf4j", "slf4j-api"),
+
 
       //https://github.com/scalag/scalag/blob/master/build.sbt
       //https://github.com/dialex/JColor
@@ -136,17 +140,16 @@ lazy val root = project
       "org.apache.pekko" %% "pekko-distributed-data" % pekkoV,
       "org.apache.pekko" %% "pekko-persistence-typed" % pekkoV,
       "org.apache.pekko" %% "pekko-stream-typed" % pekkoV,
-      "org.apache.pekko" %% "pekko-slf4j" % pekkoV,
+
       "org.apache.pekko" %% "pekko-coordination" % pekkoV,
       "org.apache.pekko" %% "pekko-management" % PekkoManagementVersion,
       "org.apache.pekko" %% "pekko-management-cluster-bootstrap" % PekkoManagementVersion,
       "org.apache.pekko" %% "pekko-management-cluster-http" % PekkoManagementVersion,
-    ),
 
-    /*(Universal / mappings <+= (sourceDirectory in packageBin)) map { (_, src) =>
-      val conf = src / "main" / "resources" / "log4j.xml"
-      conf -> "conf/log4j.xml"
-    }*/
+      "org.apache.pekko" %% "pekko-slf4j" % pekkoV,
+      "org.slf4j" % "slf4j-api" % slf4jVersion,
+      "ch.qos.logback" % "logback-classic" % logbackVersion,
+    ),
 
     assemblyMergeStrategy := {
       case PathList("META-INF", "versions", "9", "module-info.class")     => MergeStrategy.discard
@@ -233,7 +236,7 @@ lazy val root = project
       // To prevent excessive memory allocations, `-XX:MaxRAM=...` option must be specified with the value that is not bigger than the containers RAM limit.
       //"-XX:MaxRAM=412m",
 
-      //TODO: Check this out: https://github.com/kamilkloch/websocket-benchmark/blob/master/build.sbt
+      //https://github.com/kamilkloch/websocket-benchmark/blob/master/build.sbt
 
       /*
       "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED",
@@ -262,7 +265,7 @@ Test / sourceGenerators += Def.task {
 
 addCommandAlias("c", "scalafmt;compile")
 addCommandAlias("r", "reload")
-addCommandAlias("as", "clean;assembly")
+addCommandAlias("ca", "clean;assembly")
 
 // See https://github.com/apache/spark/blob/v3.3.2/launcher/src/main/java/org/apache/spark/launcher/JavaModuleOptions.java
 val unnamedJavaOptions = List(
@@ -283,6 +286,6 @@ val unnamedJavaOptions = List(
   "--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED"
 )
 
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 ./target/scala-3.5.0/safer-chat-0.1.0.jar
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 ./target/scala-3.5.0/safer-chat-0.1.0.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 ./target/scala-3.5.1/safer-chat-0.1.0.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 ./target/scala-3.5.1/safer-chat-0.1.0.jar
 //show dependencyList

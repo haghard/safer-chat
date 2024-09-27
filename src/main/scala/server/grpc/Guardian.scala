@@ -121,6 +121,7 @@ object Guardian {
             val sharding = ClusterSharding(sys)
 
             val allocationStrategy = new org.apache.pekko.cluster.sharding.ConsistentAllocation(2)
+            // to keep chat and chatSession actor on the same node
 
             val chatRoomRegion: ActorRef[ChatCmd] =
               sharding.init(

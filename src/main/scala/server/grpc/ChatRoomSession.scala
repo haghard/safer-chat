@@ -43,7 +43,7 @@ object ChatRoomSession {
 
   final case class ChatRoomState(
       chatName: ChatName,
-      cassandraSink: Sink[ServerCmd, NotUsed],
+      chatRoomSessionSink: Sink[ServerCmd, NotUsed],
       onlineUsers: HashSet[Participant] = HashSet.empty[Participant],
       recentHistory: Seq[ServerCmd] = Seq.empty,
       ks: Option[KillSwitch] = None,
@@ -53,13 +53,13 @@ object ChatRoomSession {
       chat: ChatName,
       chatUserRegion: ActorRef[ChatCmd],
       kss: ConcurrentHashMap[ChatName, KillSwitch],
-      cassandraSink: Sink[ServerCmd, NotUsed],
+      chatRoomSessionSink: Sink[ServerCmd, NotUsed],
     ): Behavior[ChatRoomCmd] =
     Behaviors.setup { ctx =>
       given resolver: ActorRefResolver = ActorRefResolver(ctx.system)
       given strRefResolver: stream.StreamRefResolver = stream.StreamRefResolver(ctx.system)
       given ac: ActorContext[ChatRoomCmd] = ctx
-      active(ChatRoomState(chat, cassandraSink), chatUserRegion, kss)
+      active(ChatRoomState(chat, chatRoomSessionSink), chatUserRegion, kss)
     }
 
   def active(
@@ -118,7 +118,7 @@ object ChatRoomSession {
                 // .log(s"$chatName.hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}")(sys.toClassic.log)
                 // .via(StreamMonitor(s"$chatName.grpc-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}"))
                 .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
-                .alsoTo(state.cassandraSink)
+                .alsoTo(state.chatRoomSessionSink)
                 .viaMat(KillSwitches.single)(Keep.both)
                 .toMat(
                   BroadcastHub

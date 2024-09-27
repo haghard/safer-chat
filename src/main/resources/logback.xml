@@ -15,12 +15,19 @@
 
 
         <!--<pattern>%yellow(%X{pekkoTimestamp}) |%highlight(%-5level)| [%green(%X{sourceThread}, %X{pekkoSource})] %cyan(%logger{36}) - %highlight(%msg%n%ex{full})</pattern>-->
-        
+
+
+
+        <!--THIS-->
         <pattern>%yellow(%date{ISO8601}) |%highlight(%-5level)| [%green(%X{sourceThread}, %X{pekkoSource})] %cyan(%logger{36}) - %highlight(%msg%n%ex{full})</pattern>
+
+        <!--<pattern>%yellow(%X{pekkoTimestamp}) |%highlight(%-5level)| [%green(%X{sourceThread}, %X{sourceActorSystem}, %X{pekkoSource})] %cyan(%logger{36}) - %highlight(%msg%n%ex{full})</pattern>-->
+
+
         <!--<pattern>%yellow(%date{&quot;yyyy-MM-dd HH:mm:ss.SSSXXX&quot;, UTC}) |%highlight(%-5level)| [%green(%X{sourceThread}, %X{pekkoSource})] %cyan(%logger{36}) - %highlight(%msg%n%ex{full})</pattern>-->
-
-
         <!--<pattern>%yellow(%date{&quot;yyyy-MM-dd HH:mm:ss.SSSXXX&quot;, UTC})| %highlight(%-5level)| [%green(%X{thread}, %X{akkaSource})] - %highlight(%msg%n%ex{full})</pattern>-->
+
+
 
       </encoder>
   </appender>
