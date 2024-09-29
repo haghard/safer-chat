@@ -18,17 +18,12 @@ public class JvmUtils {
   static DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss Z");
 
   public static String logNativeMemory() {
-
-    //from braindrill
-    //sys.runtime.exec(commands.toArray)
-
     final StringBuilder builder = new StringBuilder();
     try {
       Long processId = ProcessHandle.current().pid();
       String jcmdPath = getJcmdPath();
       String jcmdCommand = jcmdPath == null ? "jcmd" : jcmdPath;
       String[] cmd = new String[]{jcmdCommand, processId.toString(), "VM.native_memory summary"}; //Native Memory Tracking:
-      //sys.runtime.exec(cmd)
 
       builder
         .append(formatter.format(ZonedDateTime.ofInstant(Instant.ofEpochMilli(System.currentTimeMillis()), defaultTZ)))

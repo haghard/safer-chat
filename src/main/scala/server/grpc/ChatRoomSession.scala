@@ -75,7 +75,16 @@ object ChatRoomSession {
       case ConnectRequest(chatName, user, otp, replyTo) =>
         // import org.apache.pekko.actor.typed.scaladsl.LoggerOps
         // logger.info2("{}: Chat({}) already exists", ctx.self.path, chat.raw())
-        ctx.log.info("Connection request from User({}). Online: [{}]", user.raw(), state.onlineUsers.mkString(","))
+
+        // pekko://safer-chat/system/sharding/chatroomSession/ottawa.oblivion/ottawa.oblivion
+        ctx
+          .log
+          .info(
+            "{} Connection request from User({}). Online: [{}]",
+            ctx.self.path,
+            user.raw(),
+            state.onlineUsers.mkString(","),
+          )
         val replyTo0 = ReplyTo[ChatReply].toBase(replyTo)
         given sys: ActorSystem[?] = ctx.system
         state.maybeHub match {
@@ -104,7 +113,7 @@ object ChatRoomSession {
               MergeHub
                 .source[ClientCmd](perProducerBufferSize = 1)
                 .mapMaterializedValue { sink =>
-                  ctx.log.info(s"MergeHub(${chatName.raw()}) materialization")
+                  ctx.log.info(s"MergeHub(${ctx.self.path.toString})")
                   sink
                 }
                 .map(clientCmd =>
@@ -124,7 +133,8 @@ object ChatRoomSession {
                   BroadcastHub
                     .sink[ServerCmd](bufferSize = 1)
                     .mapMaterializedValue { src =>
-                      ctx.log.info(s"BroadcastHub(${chatName.raw()}) materialization"); src
+                      ctx.log.info(s"BroadcastHub(${ctx.self.path.toString})")
+                      src
                     }
                 )(Keep.both)
                 // .addAttributes(stream.ActorAttributes.supervisionStrategy { case NonFatal(ex) =>  stream.Supervision.Resume })

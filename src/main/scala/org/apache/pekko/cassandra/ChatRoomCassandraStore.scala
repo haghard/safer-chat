@@ -298,6 +298,22 @@ object ChatRoomCassandraStore {
       .run()
   }
 
+  /** Imagine you would have a high number of users connected to a local node, and they all write messages. We need a
+    * way to backpressure (flow control) this traffic all the way from the tcp receive buffer to Cassandra.
+    * (GRPC server) -> Cassandra
+    *
+    * More specifically, we don't want to read from the tcp socket (receive buffer) if the Cassandra client it not
+    * writing the messages quickly enought.
+    *
+    * can't keep up
+    * writing the messages quickly enought.
+    *
+    *
+    * Creates a shared sink to be used by all connected to this node users to be able to consume and write
+    * message to Cassandra in a backpressure-aware manner using fixed memory.
+    *
+    * In addition to that, it's being used to limit a number of concurrent writes to Cassandra.
+    */
   def chatRoomSessionsSink(
       clusterMemberDetails: String
     )(using system: ActorSystem[?]
@@ -331,7 +347,7 @@ object ChatRoomCassandraStore {
         StreamMonitor("c*-hub", cmd => s"${cmd.chat.raw()}.${cmd.userInfo.user.raw()} at ${cmd.timeUuid.toUnixTs()}")
       )
       .viaMat(KillSwitches.single)(Keep.both)
-      .groupedWithin(maxBatchSize, 100.millis)
+      .groupedWithin(maxBatchSize, 100.millis) // puts upper cap on write latency
       // .wireTap(printStats("CassandraSink.stats:", 30.seconds))
       .via(
         ThroughputMonitor(

@@ -32,7 +32,7 @@ import _root_.shared.Domain.*
 object ChatRoomClient {
 
   val APP_NAME = "safer-chat"
-  val chatName = ChatName("oblivion") // leap_of_faith, oblivion
+  val chatName = ChatName("oblivion") // ottawa.oblivion, toronto.oblivion, leap_of_faith
   sys.props += "APP_VERSION" -> server.grpc.BuildInfo.version
   sys.props += "SERVER_HOSTNAME" -> "127.0.0.2"
 

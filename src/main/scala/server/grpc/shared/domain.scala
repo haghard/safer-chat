@@ -11,7 +11,6 @@ import scalapb.TypeMapper
 import scala.compiletime.asMatchable
 import scala.util.*
 import java.math.BigInteger
-import java.nio.charset.StandardCharsets
 import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.*
 import java.security.*
