@@ -299,18 +299,14 @@ object ChatRoomCassandraStore {
   }
 
   /** Imagine you would have a high number of users connected to a local node, and they all write messages. We need a
-    * way to backpressure (flow control) this traffic all the way from the tcp receive buffer to Cassandra.
-    * (GRPC server) -> Cassandra
+    * way to backpressure (flow control) this traffic all the way from the tcp receive buffer to Cassandra. (GRPC
+    * server) -> Cassandra
     *
     * More specifically, we don't want to read from the tcp socket (receive buffer) if the Cassandra client it not
-    * writing the messages quickly enought.
+    * writing the messages quickly enough.
     *
-    * can't keep up
-    * writing the messages quickly enought.
-    *
-    *
-    * Creates a shared sink to be used by all connected to this node users to be able to consume and write
-    * message to Cassandra in a backpressure-aware manner using fixed memory.
+    * Creates a shared sink to be used by all connected to this node users to be able to consume and write message to
+    * Cassandra in a backpressure-aware manner using fixed memory.
     *
     * In addition to that, it's being used to limit a number of concurrent writes to Cassandra.
     */
@@ -434,15 +430,15 @@ object ChatRoomCassandraStore {
 
   def updateChatDetails(
       revision: Long,
-      chatDetailsOps: ChatCreated | ParticipantAdded | ParticipantAddedV2,
+      chatDetailsAction: CdcEnvelopeMessage.SealedValue,
     )(using
       ec: ExecutionContext,
       resolver: ActorRefResolver,
       session: CqlSession,
       ps: PreparedStatement,
     ): Future[Done] =
-    chatDetailsOps match {
-      case cdc: ChatCreated =>
+    chatDetailsAction match {
+      case SealedValue.Created(cdc) =>
         session
           .executeAsync(ps.bind(cdc.chat.raw(), Long.box(revision), ""))
           .asScala
@@ -450,7 +446,7 @@ object ChatRoomCassandraStore {
             ReplyTo[ChatReply].toBase(cdc.replyTo).tell(ChatReply(cdc.chat))
             Done
           }
-      case cdc: ParticipantAdded =>
+      case SealedValue.Added(cdc) =>
         session
           .executeAsync(
             ps.bind(cdc.chat.raw(), Long.box(revision), cdc.participants)
@@ -460,7 +456,7 @@ object ChatRoomCassandraStore {
             ReplyTo[ChatReply].toBase(cdc.replyTo).tell(ChatReply(cdc.chat))
             Done
           }
-      case cdc: ParticipantAddedV2 =>
+      case SealedValue.AddedV2(cdc) =>
         session
           .executeAsync(
             ps.bind(cdc.chat.raw(), Long.box(revision), cdc.participants.mkString(","))
@@ -470,6 +466,8 @@ object ChatRoomCassandraStore {
             ReplyTo[ChatReply].toBase(cdc.replyTo).tell(ChatReply(cdc.chat))
             Done
           }
+      case SealedValue.Empty =>
+        Future.failed(new Exception(s"Unsupported SealedValue.Empty"))
     }
 
   def extractPartition(e: StreamElement): ChatName =
@@ -526,7 +524,7 @@ final class ChatRoomCassandraStore(system: ExtendedActorSystem) extends DurableS
       val (queue, queueSrc) = Source.queue[StreamElement](maxBatchSize).preMaterialize()
 
       // TODO: ???
-      // queueSrc.to(CassandraSinkExtension(???).sink).run()
+      // CassandraSinkExtension(???).chatSharedSink
 
       // `mapAsyncPartitioned` is used to mitigate the head-of-line blocking.
       // The main performance optimisation is related to the fact that values for
@@ -534,7 +532,8 @@ final class ChatRoomCassandraStore(system: ExtendedActorSystem) extends DurableS
       queueSrc
         .mapAsyncPartitioned(parallelism)(extractPartition) { (out: StreamElement, _: ChatName) =>
           val (revision, cdc) = out
-          cdc match {
+          ChatRoomCassandraStore.updateChatDetails(revision, cdc)
+          /*cdc match {
             case SealedValue.Created(chatCreated) =>
               ChatRoomCassandraStore.updateChatDetails(revision, chatCreated)
             case SealedValue.Added(participantAdded) =>
@@ -543,7 +542,7 @@ final class ChatRoomCassandraStore(system: ExtendedActorSystem) extends DurableS
               ChatRoomCassandraStore.updateChatDetails(revision, participantAddedV2)
             case SealedValue.Empty =>
               Future.failed(new Exception(s"Unsupported cdc.SealedValue.Empty"))
-          }
+          }*/
         }
         .addAttributes(
           ActorAttributes.supervisionStrategy {

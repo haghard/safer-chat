@@ -65,9 +65,12 @@ final class ChatRoomSessionApi(
       authMsg: ClientCmd,
       user: Participant,
     ): Flow[ClientCmd, ServerCmd, NotUsed] =
-    RestartFlow.withBackoff(stream.RestartSettings(failoverTo.duration, failoverTo.duration.plus(2.seconds), 0.2))(() =>
-      Flow.lazyFutureFlow(() => chatRoomFlow(chatRoomSessionRegion, authMsg, user))
-    )
+    RestartFlow
+      .withBackoff(
+        stream
+          .RestartSettings(failoverTo.duration, failoverTo.duration.plus(2.seconds), 0.2)
+          .withMaxRestarts(12, 1.minute)
+      )(() => Flow.lazyFutureFlow(() => chatRoomFlow(chatRoomSessionRegion, authMsg, user)))
 
   private def auth(
       chatRegion: ActorRef[ChatCmd],

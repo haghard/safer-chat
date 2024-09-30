@@ -88,11 +88,11 @@ object ClusteredJvmMetrics {
     ): Source[ByteString, NotUsed] =
     src
       .watchTermination() { (_, done) =>
-        done.onComplete(_ => println(s"Disconnected $clientId"))(sys.executionContext)
+        // done.onComplete(_ => println(s"Disconnected $clientId"))(sys.executionContext)
         NotUsed
       }
-      .map { bts =>
+  /*.map { bts =>
         println(s" -> $clientId")
         bts
-      }
+      }*/
 }

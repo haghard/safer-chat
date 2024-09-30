@@ -21,6 +21,7 @@ import org.apache.pekko.NotUsed
 
 import java.util.concurrent.ConcurrentHashMap
 import cluster.sharding.typed.ShardingMessageExtractor
+import org.apache.pekko.cassandra.CassandraSinkExtension
 
 object ChatRoomSession {
 
@@ -53,12 +54,15 @@ object ChatRoomSession {
       chat: ChatName,
       chatUserRegion: ActorRef[ChatCmd],
       kss: ConcurrentHashMap[ChatName, KillSwitch],
-      chatRoomSessionSink: Sink[ServerCmd, NotUsed],
     ): Behavior[ChatRoomCmd] =
     Behaviors.setup { ctx =>
       given resolver: ActorRefResolver = ActorRefResolver(ctx.system)
       given strRefResolver: stream.StreamRefResolver = stream.StreamRefResolver(ctx.system)
       given ac: ActorContext[ChatRoomCmd] = ctx
+
+      val (chatRoomSessionSink, ks) = CassandraSinkExtension(ctx.system).chatSessionSharedSink
+      kss.putIfAbsent(ChatName("cassandra.msg.writer"), ks)
+
       active(ChatRoomState(chat, chatRoomSessionSink), chatUserRegion, kss)
     }
 
@@ -75,12 +79,10 @@ object ChatRoomSession {
       case ConnectRequest(chatName, user, otp, replyTo) =>
         // import org.apache.pekko.actor.typed.scaladsl.LoggerOps
         // logger.info2("{}: Chat({}) already exists", ctx.self.path, chat.raw())
-
-        // pekko://safer-chat/system/sharding/chatroomSession/ottawa.oblivion/ottawa.oblivion
         ctx
           .log
-          .info(
-            "{} Connection request from User({}). Online: [{}]",
+          .warn(
+            "{}: Connection request from User({}). Online: [{}]",
             ctx.self.path,
             user.raw(),
             state.onlineUsers.mkString(","),
@@ -176,7 +178,7 @@ object ChatRoomSession {
         if (updatedOnlineUsers.isEmpty) {
           state.ks.foreach(_.shutdown())
           Option(kss.remove(chatName)).foreach(_.shutdown())
-          ctx.log.info("★ ★ ★ Passivate chat-room: {} ★ ★ ★", state.chatName)
+          ctx.log.info("★ ★ ★ Passivate chat-session {} ★ ★ ★", state.chatName)
           chatRegion.tell(StopChatEntity(chatName))
           Behaviors.stopped
         } else {

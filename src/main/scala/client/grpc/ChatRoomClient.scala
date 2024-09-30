@@ -15,7 +15,6 @@ import java.nio.charset.StandardCharsets
 import java.time.{ Duration, Instant, ZonedDateTime }
 import java.util.concurrent.atomic.AtomicInteger
 import org.slf4j.Logger
-import server.grpc.*
 import org.apache.pekko.*
 import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
@@ -32,9 +31,9 @@ import _root_.shared.Domain.*
 object ChatRoomClient {
 
   val APP_NAME = "safer-chat"
-  val chatName = ChatName("oblivion") // ottawa.oblivion, toronto.oblivion, leap_of_faith
+  val chatName = ChatName("oblivion") // leap_of_faith
   sys.props += "APP_VERSION" -> server.grpc.BuildInfo.version
-  sys.props += "SERVER_HOSTNAME" -> "127.0.0.2"
+  sys.props += "SERVER_HOSTNAME" -> "127.0.0.1"
 
   // https://github.com/bcgit/bc-java/blob/main/core/src/test/java/org/bouncycastle/crypto/test/Ed25519Test.java
   // import org.bouncycastle.math.ec.rfc8032.Ed25519

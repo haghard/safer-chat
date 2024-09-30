@@ -16,7 +16,6 @@ import org.slf4j.Logger
 import server.grpc.api.*
 import org.apache.pekko.actor.typed.*
 import org.apache.pekko.actor.typed.scaladsl.*
-import org.apache.pekko.cassandra.ChatRoomCassandraStore
 import org.apache.pekko.cluster.Member
 import org.apache.pekko.cluster.sharding.typed.*
 import org.apache.pekko.cluster.sharding.typed.scaladsl.*
@@ -36,8 +35,12 @@ import scala.jdk.CollectionConverters.*
 
 object Guardian {
 
+  val chatDC = "chat-DC"
+  val sessionDC = "session-DC"
+
   enum Protocol {
-    case SelfUpMsg(mba: immutable.SortedSet[Member]) extends Protocol
+    case SelfUpMsg(mbs: immutable.SortedSet[Member]) extends Protocol
+    case SelfUpMsgMultiDc(mbs: Map[String, immutable.SortedSet[Member]]) extends Protocol
   }
 
   def apply(appCfg: AppConfig): Behavior[Protocol] =
@@ -53,7 +56,16 @@ object Guardian {
             Subscribe(
               ctx.messageAdapter[SelfUp] {
                 case m: SelfUp =>
-                  Protocol.SelfUpMsg(immutable.SortedSet.from(m.currentClusterState.members)(Member.ageOrdering))
+                  Protocol.SelfUpMsgMultiDc(
+                    m.currentClusterState
+                      .members
+                      .groupBy[String](_.dataCenter)
+                      .view
+                      .mapValues(immutable.SortedSet.from(_)(Member.ageOrdering))
+                      .toMap
+                  )
+
+                // Protocol.SelfUpMsg(immutable.SortedSet.from(m.currentClusterState.members)(Member.ageOrdering))
               },
               classOf[SelfUp],
             )
@@ -61,9 +73,13 @@ object Guardian {
 
         Behaviors.receive[Protocol] {
           case (ctx, _ @Protocol.SelfUpMsg(membersByAge)) =>
+            ???
+          case (ctx, _ @Protocol.SelfUpMsgMultiDc(membersByAgeDc)) =>
+            import org.apache.pekko.cluster.*
+
             cluster.subscriptions ! Unsubscribe(ctx.self)
 
-            import org.apache.pekko.cluster.*
+            val membersByAge = membersByAgeDc(cluster.selfMember.dataCenter)
             membersByAge.headOption.foreach { shardCoordinator =>
               val totalMemory = ManagementFactory
                 .getOperatingSystemMXBean()
@@ -85,7 +101,7 @@ object Guardian {
                      |--------------------------------------------------------------------------------
                      |Member:${cluster.selfMember.details()}🧪ShCoord:${shardCoordinator
                       .details()}🧪Leader:[${cluster.state.leader.getOrElse("")}]🧪Rolling update:$isUpd
-                     |Members:[${membersByAge.map(_.details()).mkString(", ")}]
+                     |Members:[${membersByAgeDc.values.map(_.map(_.details()).mkString(",")).mkString(", ")}
                      |
                      |Env
                      |Hostname:${InetAddress.getLocalHost().getHostName()},
@@ -120,10 +136,11 @@ object Guardian {
             val kss = new ConcurrentHashMap[ChatName, KillSwitch]()
             val sharding = ClusterSharding(sys)
 
-            val allocationStrategy = new org.apache.pekko.cluster.sharding.ConsistentAllocation(2)
             // to keep chat and chatSession actor on the same node
+            // val allocationStrategy = new org.apache.pekko.cluster.sharding.ConsistentAllocation(2)
 
-            val chatRoomRegion: ActorRef[ChatCmd] =
+            // on chat-DC it's valid shardRegion, on sessionDC it acts as shardProxy
+            val chatRoomRegionOrProxy: ActorRef[ChatCmd] =
               sharding.init(
                 Entity(ChatRoom.TypeKey)(entityCtx => ChatRoom(ChatName(entityCtx.entityId), appCfg))
                   .withSettings(
@@ -135,20 +152,18 @@ object Guardian {
                           .withIdleEntityPassivation(3.minutes)
                       )
                   )
+                  .withDataCenter(chatDC)
                   .withMessageExtractor(ChatRoom.shardingMessageExtractor())
                   .withStopMessage(StopChatEntity())
-                  .withAllocationStrategy(allocationStrategy)
+                  // .withAllocationStrategy(allocationStrategy)
               )
 
-            val (chatRoomSessionSink, ks) =
-              ChatRoomCassandraStore.chatRoomSessionsSink(cluster.selfMember.details3())
-            kss.put(ChatName("cassandra.msg.writer"), ks)
-
-            val chatRoomSessionRegion: ActorRef[ChatRoomCmd] =
+            // session-DC it's valid shardRegion, on chat-DC it acts as shardProxy
+            val chatRoomSessionRegionOrProxy: ActorRef[ChatRoomCmd] =
               sharding.init(
-                Entity(ChatRoomSession.TypeKey)(entityCtx =>
-                  ChatRoomSession(ChatName(entityCtx.entityId), chatRoomRegion, kss, chatRoomSessionSink)
-                )
+                Entity(ChatRoomSession.TypeKey) { entityCtx =>
+                  ChatRoomSession(ChatName(entityCtx.entityId), chatRoomRegionOrProxy, kss)
+                }
                   .withSettings(
                     ClusterShardingSettings(sys)
                       .withPassivationStrategy(
@@ -159,21 +174,26 @@ object Guardian {
                           .withIdleEntityPassivation(30.seconds)
                       )
                   )
+                  .withDataCenter(sessionDC)
                   .withMessageExtractor(ChatRoomSession.shardingMessageExtractor())
-                  .withAllocationStrategy(allocationStrategy)
+                  // .withAllocationStrategy(allocationStrategy)
               )
 
             val grpcService: HttpRequest => Future[HttpResponse] =
               ServiceHandler.concatOrNotFound(
-                ChatRoomHandler.partial(new ChatRoomApi(appCfg, chatRoomRegion)),
+                ChatRoomHandler.partial(new ChatRoomApi(appCfg, chatRoomRegionOrProxy)),
                 ChatRoomSessionHandler.partial(
-                  new ChatRoomSessionApi(appCfg, chatRoomRegion, chatRoomSessionRegion, kss)
+                  new ChatRoomSessionApi(appCfg, chatRoomRegionOrProxy, chatRoomSessionRegionOrProxy, kss)
                 ),
                 ServerReflection.partial(List(server.grpc.admin.ChatRoom, server.grpc.chat.ChatRoomSession)),
               )
 
-            AppBootstrap.grpc(appCfg, grpcService, kss)
+            if (cluster.selfMember.dataCenter == chatDC) {
+              AppBootstrap.grpc(appCfg, grpcService, kss)
+            }
+
             AppBootstrap.http(appCfg)
+            AppBootstrap.onShutdown(kss)
             Behaviors.same
         }
       }

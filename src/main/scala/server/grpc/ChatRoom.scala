@@ -84,7 +84,7 @@ object ChatRoom {
         .receiveSignal {
           case (state, persistence.typed.state.RecoveryCompleted) =>
             val lsn = DurableStateBehavior.lastSequenceNumber(ctx)
-            ctx.log.info("{} RecoveryCompleted:[{}]. SeqNum:{}", ctx.self.path.toString, state.toString, lsn)
+            ctx.log.warn("{}: RecoveryCompleted:[{}]. SeqNum:{}", ctx.self.path.toString, state.toString, lsn)
           case (state, persistence.typed.state.RecoveryFailed(ex)) =>
             ctx.log.error("RecoveryFailed: ", ex)
         }

@@ -92,6 +92,66 @@ object AppBootstrap {
       }
   }
 
+  def onShutdown(
+      kss: ConcurrentHashMap[ChatName, KillSwitch]
+    )(using sys: ActorSystem[?]
+    ): Unit = {
+    import sys.executionContext
+    val logger = sys.log
+    val shutdown = CoordinatedShutdown(sys)
+
+    shutdown.addTask(PhaseBeforeServiceUnbind, "before-unbind") { () =>
+      Future.successful {
+        logger.info(s"★ ★ ★ CoordinatedShutdown.0 [shutdown.${kss.values().size()} hubs]  ★ ★ ★")
+        kss.forEach { (chat, ks) =>
+          ks.shutdown()
+        }
+        Done
+      }
+    }
+
+    // PhaseServiceRequestsDone - process in-flight requests
+    shutdown.addTask(PhaseServiceRequestsDone, "kss.shutdown") { () =>
+      Future {
+        kss.values().forEach(_.abort(new Exception("abort")))
+        logger.info(s"★ ★ ★ CoordinatedShutdown.4 [kss.shutdown.${kss.size()} ]  ★ ★ ★")
+        Done
+      }
+    }
+
+    // forcefully kills connections that are still open
+    shutdown.addTask(PhaseServiceStop, "close.connections") { () =>
+      Http().shutdownAllConnectionPools().map { _ =>
+        logger.info("★ ★ ★ CoordinatedShutdown.5 [close.connections] ★ ★ ★")
+        Done
+      }
+    }
+
+    shutdown.addTask(PhaseBeforeClusterShutdown, "before-cluster-shutdown.0") { () =>
+      Http()
+        .shutdownAllConnectionPools() // forcefully kils connections that are still open
+        .flatMap(_ =>
+          scala
+            .jdk
+            .javaapi
+            .FutureConverters
+            .asScala(CassandraSessionExtension(sys).cqlSession.forceCloseAsync())
+            .map { _ =>
+              logger.info(s"★ ★ ★ CoordinatedShutdown.6 [before-cluster-shutdown]  ★ ★ ★")
+              Done
+            }
+        )
+    }
+
+    shutdown.addTask(PhaseActorSystemTerminate, "actor-system-terminate.0") { () =>
+      Future.successful {
+        logger.info("★ ★ ★ CoordinatedShutdown.7 [actor-system-terminate] ★ ★ ★")
+        Done
+      }
+    }
+
+  }
+
   def grpc(
       appCfg: AppConfig,
       grpcService: HttpRequest => Future[HttpResponse],
@@ -142,16 +202,6 @@ object AppBootstrap {
             }
           }*/
 
-          shutdown.addTask(PhaseBeforeServiceUnbind, "before-unbind") { () =>
-            Future.successful {
-              logger.info(s"★ ★ ★ CoordinatedShutdown.0 [shutdown.${kss.values().size()} hubs]  ★ ★ ★")
-              kss.forEach { (chat, ks) =>
-                ks.shutdown()
-              }
-              Done
-            }
-          }
-
           // Next 2 tasks(PhaseServiceUnbind, PhaseServiceRequestsDone) makes sure that during shutdown
           // no more requests are accepted and
           // all in-flight requests have been processed
@@ -177,46 +227,6 @@ object AppBootstrap {
               */
             binding.terminate(phaseTimeout - 2.second).map { _ =>
               logger.info("★ ★ ★ CoordinatedShutdown.3 [http-api.terminate]  ★ ★ ★")
-              Done
-            }
-          }
-
-          // PhaseServiceRequestsDone - process in-flight requests
-          shutdown.addTask(PhaseServiceRequestsDone, "kss.shutdown") { () =>
-            Future {
-              kss.values().forEach(_.abort(new Exception("abort")))
-              logger.info(s"★ ★ ★ CoordinatedShutdown.4 [kss.shutdown.${kss.size()} ]  ★ ★ ★")
-              Done
-            }
-          }
-
-          // forcefully kills connections that are still open
-          shutdown.addTask(PhaseServiceStop, "close.connections") { () =>
-            Http().shutdownAllConnectionPools().map { _ =>
-              logger.info("★ ★ ★ CoordinatedShutdown.5 [close.connections] ★ ★ ★")
-              Done
-            }
-          }
-
-          shutdown.addTask(PhaseBeforeClusterShutdown, "before-cluster-shutdown.0") { () =>
-            Http()
-              .shutdownAllConnectionPools() // forcefully kils connections that are still open
-              .flatMap(_ =>
-                scala
-                  .jdk
-                  .javaapi
-                  .FutureConverters
-                  .asScala(CassandraSessionExtension(sys).cqlSession.forceCloseAsync())
-                  .map { _ =>
-                    logger.info(s"★ ★ ★ CoordinatedShutdown.6 [before-cluster-shutdown]  ★ ★ ★")
-                    Done
-                  }
-              )
-          }
-
-          shutdown.addTask(PhaseActorSystemTerminate, "actor-system-terminate.0") { () =>
-            Future.successful {
-              logger.info("★ ★ ★ CoordinatedShutdown.7 [actor-system-terminate] ★ ★ ★")
               Done
             }
           }
