@@ -17,11 +17,13 @@ object CassandraSinkExtension extends ExtensionId[CassandraSinkExtension] with E
 class CassandraSinkExtension(system: ActorSystem) extends Extension {
   given system0: org.apache.pekko.actor.typed.ActorSystem[?] = system.toTyped
 
+  val cDetails = Cluster(system).selfMember.details3()
+
   // Shared sink to be used by all local grpc connections.
   val chatSessionSharedSink =
-    ChatRoomCassandraStore.chatRoomSessionsSink(Cluster(system).selfMember.details3())
+    ChatRoomCassandraStore.chatRoomSessionsSink(cDetails)
 
-  // TODO:
-  // val chatSharedSink = ???
+  val chatOpsQueue =
+    ChatRoomCassandraStore.chatRoomQueue(cDetails)
 
 }

@@ -298,6 +298,49 @@ object ChatRoomCassandraStore {
       .run()
   }
 
+  def chatRoomQueue(
+      clusterMemberDetails: String
+    )(using system: ActorSystem[?]
+    ): BoundedSourceQueue[StreamElement] = {
+    val parallelism = system.settings.config.getInt("cassandra.parallelism")
+    val maxBatchSize = system.settings.config.getInt("cassandra.max-batch-size")
+
+    given ex: ExecutionContext = system.executionContext
+    given refResolver: ActorRefResolver = ActorRefResolver(system)
+    given cqlSession: CqlSession = CassandraSessionExtension(system).cqlSession
+    given pStmt: PreparedStatement =
+      cqlSession.prepare(
+        SimpleStatement
+          .builder("INSERT INTO chat_details (chat, revision, participants) VALUES (?, ?, ?)")
+          .setExecutionProfileName(profileName)
+          .build()
+      )
+
+    val queue =
+      Source
+        .queue[StreamElement](maxBatchSize * 2)
+        .mapAsyncPartitioned(parallelism)(extractPartition) { (out: StreamElement, _: ChatName) =>
+          val (revision, cdc) = out
+          // TODO: error handling
+          ChatRoomCassandraStore.updateChatDetails(revision, cdc)
+        }
+        .addAttributes(
+          ActorAttributes.supervisionStrategy {
+            case NonFatal(cause) =>
+              system.log.error(s"${classOf[ChatRoomCassandraStore].getName} failed and resumed", cause)
+              Supervision.Resume
+          }
+        )
+        .mapMaterializedValue { q =>
+          system.log.info(s"ChatRoomQueue($clusterMemberDetails) materialization")
+          q
+        }
+        .toMat(Sink.ignore)(Keep.left)
+        .run()
+
+    queue
+  }
+
   /** Imagine you would have a high number of users connected to a local node, and they all write messages. We need a
     * way to backpressure (flow control) this traffic all the way from the tcp receive buffer to Cassandra. (GRPC
     * server) -> Cassandra
@@ -489,26 +532,10 @@ final class ChatRoomCassandraStore(system: ExtendedActorSystem) extends DurableS
 
   override def scaladslDurableStateStore(): DurableStateStore[Any] =
     new DurableStateUpdateStore[ChatRoom.State]() {
-
       given typedSystem: ActorSystem[?] = system.toTyped
-
       given logger: Logger = typedSystem.log
-
-      given refResolver: ActorRefResolver = ActorRefResolver(typedSystem)
-
-      given mat: Materializer = Materializer.matFromSystem(system)
-
       given scheduler: org.apache.pekko.actor.Scheduler = system.scheduler
-
       given cqlSession: CqlSession = CassandraSessionExtension(system).cqlSession
-
-      given writeDetails: PreparedStatement =
-        cqlSession.prepare(
-          SimpleStatement
-            .builder("INSERT INTO chat_details (chat, revision, participants) VALUES (?, ?, ?)")
-            .setExecutionProfileName(profileName)
-            .build()
-        )
 
       cqlSession.execute(ChatRoomCassandraStore.chatDetailsDDL)
       cqlSession.execute(ChatRoomCassandraStore.chatTimelineDDL)
@@ -521,37 +548,7 @@ final class ChatRoomCassandraStore(system: ExtendedActorSystem) extends DurableS
             .build()
         )
 
-      val (queue, queueSrc) = Source.queue[StreamElement](maxBatchSize).preMaterialize()
-
-      // TODO: ???
-      // CassandraSinkExtension(???).chatSharedSink
-
-      // `mapAsyncPartitioned` is used to mitigate the head-of-line blocking.
-      // The main performance optimisation is related to the fact that values for
-      // different keys can be processed independently in parallel.
-      queueSrc
-        .mapAsyncPartitioned(parallelism)(extractPartition) { (out: StreamElement, _: ChatName) =>
-          val (revision, cdc) = out
-          ChatRoomCassandraStore.updateChatDetails(revision, cdc)
-          /*cdc match {
-            case SealedValue.Created(chatCreated) =>
-              ChatRoomCassandraStore.updateChatDetails(revision, chatCreated)
-            case SealedValue.Added(participantAdded) =>
-              ChatRoomCassandraStore.updateChatDetails(revision, participantAdded)
-            case SealedValue.AddedV2(participantAddedV2) =>
-              ChatRoomCassandraStore.updateChatDetails(revision, participantAddedV2)
-            case SealedValue.Empty =>
-              Future.failed(new Exception(s"Unsupported cdc.SealedValue.Empty"))
-          }*/
-        }
-        .addAttributes(
-          ActorAttributes.supervisionStrategy {
-            case NonFatal(cause) =>
-              logger.error(s"${classOf[ChatRoomCassandraStore].getName} failed and resumed", cause)
-              Supervision.Resume
-          }
-        )
-        .runWith(Sink.ignore)
+      val queue = CassandraSinkExtension(system).chatOpsQueue
 
       def insert(
           state: ChatRoom.State,
