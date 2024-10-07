@@ -48,7 +48,7 @@ object Bootstrap {
 
     try {
       val cqlSession = CassandraSessionExtension(system).cqlSession
-      ChatRoomCassandraStore.createTables(cqlSession, system.log)
+      CassandraStore.createTables(cqlSession, system.log)
     } catch {
       case NonFatal(ex) =>
         system.log.error(s"CassandraSession error", ex)

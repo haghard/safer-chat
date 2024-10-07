@@ -17,6 +17,7 @@ import server.grpc.api.*
 import org.apache.pekko.actor.typed.*
 import org.apache.pekko.actor.typed.scaladsl.*
 import org.apache.pekko.cluster.Member
+import org.apache.pekko.cluster.sharding.LeastShardAllocationStrategyWithLogger
 import org.apache.pekko.cluster.sharding.typed.*
 import org.apache.pekko.cluster.sharding.typed.scaladsl.*
 import org.apache.pekko.cluster.typed.*
@@ -48,7 +49,7 @@ object Guardian {
       .setup[Protocol] { ctx =>
         given sys: ActorSystem[?] = ctx.system
         given cluster: Cluster = Cluster(sys)
-        given logger: Logger = sys.log
+        given logger: Logger = ctx.log // sys.log
 
         cluster
           .subscriptions
@@ -136,33 +137,23 @@ object Guardian {
             val kss = new ConcurrentHashMap[ChatName, KillSwitch]()
             val sharding = ClusterSharding(sys)
 
+            /*
+            val numOfShards = sys.settings.config.getInt("pekko.cluster.sharding.number-of-shards")
+            new DynamicLeastShardAllocationStrategy(1, 10, 2, 0.0)
+            val oldAllocationStrategy = new org.apache.pekko.cluster.sharding.ShardCoordinator.LeastShardAllocationStrategy(32, 1)
+             */
+
+            val allocationStrategy = new LeastShardAllocationStrategyWithLogger(8, 1)
+
             // to keep chat and chatSession actor on the same node
             // val allocationStrategy = new org.apache.pekko.cluster.sharding.ConsistentAllocation(2)
+            // val allocationStrategy = new LeastShardNoRebalancingAllocationStrategy(logger)
 
-            // on chat-DC it's valid shardRegion, on sessionDC it acts as shardProxy
-            val chatRoomRegionOrProxy: ActorRef[ChatCmd] =
-              sharding.init(
-                Entity(ChatRoom.TypeKey)(entityCtx => ChatRoom(ChatName(entityCtx.entityId), appCfg))
-                  .withSettings(
-                    ClusterShardingSettings(sys)
-                      .withPassivationStrategy(
-                        ClusterShardingSettings
-                          .PassivationStrategySettings
-                          .defaults
-                          .withIdleEntityPassivation(3.minutes)
-                      )
-                  )
-                  .withDataCenter(chatDC)
-                  .withMessageExtractor(ChatRoom.shardingMessageExtractor())
-                  .withStopMessage(StopChatEntity())
-                  // .withAllocationStrategy(allocationStrategy)
-              )
-
-            // session-DC it's valid shardRegion, on chat-DC it acts as shardProxy
+            // on session-DC it's valid shardRegion, on chat-DC it acts as shardProxy
             val chatRoomSessionRegionOrProxy: ActorRef[ChatRoomCmd] =
               sharding.init(
                 Entity(ChatRoomSession.TypeKey) { entityCtx =>
-                  ChatRoomSession(ChatName(entityCtx.entityId), chatRoomRegionOrProxy, kss)
+                  ChatRoomSession(ChatName(entityCtx.entityId), kss)
                 }
                   .withSettings(
                     ClusterShardingSettings(sys)
@@ -176,19 +167,28 @@ object Guardian {
                   )
                   .withDataCenter(sessionDC)
                   .withMessageExtractor(ChatRoomSession.shardingMessageExtractor())
-                  // .withAllocationStrategy(allocationStrategy)
-              )
-
-            val grpcService: HttpRequest => Future[HttpResponse] =
-              ServiceHandler.concatOrNotFound(
-                ChatRoomHandler.partial(new ChatRoomApi(appCfg, chatRoomRegionOrProxy)),
-                ChatRoomSessionHandler.partial(
-                  new ChatRoomSessionApi(appCfg, chatRoomRegionOrProxy, chatRoomSessionRegionOrProxy, kss)
-                ),
-                ServerReflection.partial(List(server.grpc.admin.ChatRoom, server.grpc.chat.ChatRoomSession)),
+                  .withAllocationStrategy(allocationStrategy)
               )
 
             if (cluster.selfMember.dataCenter == chatDC) {
+
+              // on chat-DC it's valid shardRegion, on sessionDC it acts as shardProxy
+              val chatRoomRegionOrProxy: ActorRef[ChatCmd] =
+                sharding.init(
+                  Entity(ChatRoom.TypeKey)(entityCtx => ChatRoom(ChatName(entityCtx.entityId), appCfg, 30.seconds))
+                    // .withDataCenter(chatDC)
+                    .withMessageExtractor(ChatRoom.shardingMessageExtractor())
+                    .withAllocationStrategy(allocationStrategy)
+                )
+
+              val grpcService: HttpRequest => Future[HttpResponse] =
+                ServiceHandler.concatOrNotFound(
+                  ChatRoomHandler.partial(new ChatRoomApi(appCfg, chatRoomRegionOrProxy)),
+                  ChatRoomSessionHandler.partial(
+                    new ChatRoomSessionApi(appCfg, chatRoomRegionOrProxy, chatRoomSessionRegionOrProxy, kss)
+                  ),
+                  ServerReflection.partial(List(server.grpc.admin.ChatRoom, server.grpc.chat.ChatRoomSession)),
+                )
               AppBootstrap.grpc(appCfg, grpcService, kss)
             }
 

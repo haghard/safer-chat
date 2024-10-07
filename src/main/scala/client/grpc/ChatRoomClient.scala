@@ -21,8 +21,7 @@ import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.grpc.GrpcClientSettings
 import org.apache.pekko.stream.scaladsl.Source
 import server.grpc.chat.{ ClientCmd, ServerCmd, UserInfo }
-import org.apache.pekko.cassandra.ChatRoomCassandraStore.{ SERVER_DEFAULT_TZ, formatter }
-
+import org.apache.pekko.cassandra.CassandraStore.*
 import scala.util.control.NonFatal
 import _root_.shared.*
 import _root_.shared.rsa.*
@@ -31,7 +30,7 @@ import _root_.shared.Domain.*
 object ChatRoomClient {
 
   val APP_NAME = "safer-chat"
-  val chatName = ChatName("oblivion") // leap_of_faith
+  val chatName = ChatName("oblivion3") // leap_of_faith
   sys.props += "APP_VERSION" -> server.grpc.BuildInfo.version
   sys.props += "SERVER_HOSTNAME" -> "127.0.0.1"
 

@@ -5,7 +5,7 @@
 package server
 package grpc
 
-import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.{ DurationInt, FiniteDuration }
 import com.domain.chat.*
 
 import java.nio.charset.*
@@ -53,9 +53,7 @@ object ChatRoom {
         cmd.chat.raw()
 
       override def shardId(entityId: String): String =
-        // one entity per chat|shard to isolate rebalancing. We want to rebalance one chat|shard at a time
         entityId
-      // math.abs(entityId.hashCode % numOfShards).toString
 
       override def unwrapMessage(cmd: ChatCmd): ChatCmd = cmd
     }
@@ -63,6 +61,7 @@ object ChatRoom {
   def apply(
       chatId: ChatName,
       appCfg: AppConfig,
+      passivatonTo: FiniteDuration,
     ): Behavior[ChatCmd] =
     Behaviors.setup { ctx =>
       given resolver: ActorRefResolver = ActorRefResolver(ctx.system)
@@ -75,19 +74,23 @@ object ChatRoom {
 
       given sharding: ClusterSharding = ClusterSharding(sys)
 
-      DurableStateBehavior[ChatCmd, ChatState](
-        persistence.typed.PersistenceId.ofUniqueId(chatId.raw()),
-        emptyState = ChatState(),
-        commandHandler = cmdHandler(appCfg),
-      )
-        .onPersistFailure(SupervisorStrategy.restartWithBackoff(500.millis, 5.seconds, 0.2))
-        .receiveSignal {
-          case (state, persistence.typed.state.RecoveryCompleted) =>
-            val lsn = DurableStateBehavior.lastSequenceNumber(ctx)
-            ctx.log.warn("{}: RecoveryCompleted:[{}]. SeqNum:{}", ctx.self.path.toString, state.toString, lsn)
-          case (state, persistence.typed.state.RecoveryFailed(ex)) =>
-            ctx.log.error("RecoveryFailed: ", ex)
-        }
+      Behaviors.withTimers { t =>
+        t.startSingleTimer(chatId, StopChatEntity(chatId), passivatonTo)
+
+        DurableStateBehavior[ChatCmd, ChatState](
+          persistence.typed.PersistenceId.ofUniqueId(chatId.raw()),
+          emptyState = ChatState(),
+          commandHandler = cmdHandler(appCfg),
+        )
+          .onPersistFailure(SupervisorStrategy.restartWithBackoff(500.millis, 5.seconds, 0.2))
+          .receiveSignal {
+            case (state, persistence.typed.state.RecoveryCompleted) =>
+              val lsn = DurableStateBehavior.lastSequenceNumber(ctx)
+              ctx.log.warn("{}: RecoveryCompleted:[{}]. SeqNum:{}", ctx.self.path.toString, state.toString, lsn)
+            case (state, persistence.typed.state.RecoveryFailed(ex)) =>
+              ctx.log.error("RecoveryFailed: ", ex)
+          }
+      }
     }
 
   def cmdHandler(
@@ -118,7 +121,7 @@ object ChatRoom {
           case None =>
             Effect
               .persist(state.withName(chat, replyTo))
-              .thenRun(_ => logger.info("Created Chat({})", chat))
+              .thenRun(_ => logger.info("Create Chat({}) ", chat))
               .thenNoReply()
         }
 
@@ -129,6 +132,7 @@ object ChatRoom {
             val rps = state.registeredParticipants
             logger.info(s"Registered-participants:[${rps.mkString(",")}]")
 
+            // TODO: limit number of participants
             if (state.registeredParticipants.contains(user)) {
               Effect
                 .none[ChatState]
@@ -137,7 +141,7 @@ object ChatRoom {
             } else {
               Effect
                 .persist(state.withNewUser(user, chat, replyTo))
-                .thenRun(_ => logger.info(s"Added ${user.raw()} to ${chat.raw()}"))
+                .thenRun(_ => logger.info(s"Add ${user.raw()} to ${chat.raw()}"))
                 .thenNoReply()
             }
           case None =>

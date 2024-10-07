@@ -20,7 +20,8 @@ import com.domain.chat.*
 import com.domain.chatRoom.*
 import org.apache.pekko.actor.typed.ActorRefResolver
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.{ Askable, schedulerFromActorSystem }
-import org.apache.pekko.cassandra.{ CassandraSessionExtension, ChatRoomCassandraStore }
+import org.apache.pekko.cassandra.{ ChatRoomExtension, ExpiringPromise }
+import org.apache.pekko.cassandra.CassandraSessionExtension
 import server.grpc.api.ChatRoomSessionApi.ChatError
 import server.grpc.chat.{ ClientCmd, CmdTag, ServerCmd }
 import shared.Domain.{ ChatName, Otp, Participant, ReplyTo }
@@ -47,6 +48,8 @@ final class ChatRoomSessionApi(
   given replyToResolver: ActorRefResolver = ActorRefResolver(system)
   given streamRefsResolver: stream.StreamRefResolver = stream.StreamRefResolver(system)
   given cqlSession: CqlSession = CassandraSessionExtension(system).cqlSession
+
+  val resentHistoryQueue = ChatRoomExtension(system).readResentHistoryQueue
 
   def post(in: Source[ClientCmd, NotUsed]): Source[ServerCmd, NotUsed] =
     in.prefixAndTail(1).flatMapConcat {
@@ -118,7 +121,17 @@ final class ChatRoomSessionApi(
                       case CmdTag.PUT =>
                         Future.successful(Seq(cmd))
                       case CmdTag.GET =>
-                        ChatRoomCassandraStore.getRecentHistory(cmd)
+                        val expP = ExpiringPromise[Seq[ServerCmd]](failoverTo.duration)
+                        resentHistoryQueue.offer((cmd, expP)).flatMap {
+                          case QueueOfferResult.Enqueued =>
+                            expP.future
+                          case QueueOfferResult.Dropped =>
+                            logger.warn("read-queue overflow")
+                            Future.failed(new Exception("Read overflow"))
+                          case result: QueueCompletionResult =>
+                            Future.failed(new Exception("Unexpected"))
+                        }
+                      // ChatRoomExtension(system).readQueue.getRecentHistory(cmd)
                       case CmdTag.Unrecognized(tag) =>
                         Future.failed(new Exception(s"Unrecognized $tag"))
                     }
@@ -145,9 +158,9 @@ final class ChatRoomSessionApi(
               )
               .backpressureTimeout(5.seconds) // automatic cleanup of slow subscribers
               .watchTermination() { (_, done) =>
-                logger.info("{}@{} connection has been established", authMsg.chat, user)
+                logger.info("{}@{} StreamRef connection has been established", authMsg.chat, user)
                 done.onComplete { _ =>
-                  logger.info("{}@{} connection has been closed", authMsg.chat, user)
+                  logger.info("{}@{} StreamRef connection has been closed", authMsg.chat, user)
                   chatRoomRegion.tell(Disconnect(user, authMsg.chat, authMsg.otp))
                 }
                 NotUsed

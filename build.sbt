@@ -1,11 +1,13 @@
 val scala3Version = "3.5.1"
 
 //https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.1.html
+//https://github.com/apache/pekko/tags
 val pekkoV = "1.1.1"
-val logbackVersion = "1.3.14" //"1.5.7"
+val logbackVersion = "1.3.14" //"1.5.8"
 val slf4jVersion = "2.0.16" //"1.7.36"
 
-val pekkoHttpV = "1.1.0-M1"
+//https://github.com/apache/pekko-http/tags
+val pekkoHttpV = "1.1.0"
 val PekkoManagementVersion = "1.1.0-M1"
 
 val ProjectName = "safer-chat"
@@ -13,7 +15,10 @@ val AmmoniteVersion = "3.0.0"
 
 val AppVersion = "0.1.0"
 
-resolvers += "Apache Snapshots" at "https://repository.apache.org/content/repositories/snapshots/"
+resolvers ++= Seq(
+  "Apache Snapshots" at "https://repository.apache.org/content/repositories/snapshots/",
+  "Ratis" at "https://mvnrepository.com/artifact/org.apache.ratis/ratis-server"
+)
 
 //show scalacOptions
 lazy val scalac3Settings = Seq(
@@ -25,7 +30,10 @@ lazy val scalac3Settings = Seq(
     "-Xkind-projector",
     "-Wsafe-init",
     "-language:adhocExtensions",
-    "-release:17",
+
+    //https://www.scala-lang.org/blog/2022/04/12/scala-3.1.2-released.html
+    //-release is now -java-output-version, and -Xtarget is -Xunchecked-java-output-version.
+
     //https://github.com/apache/pekko-grpc/blob/88e8567e2decbca19642e5454729aa78cce455eb/project/Common.scala#L72
     "-Wconf:msg=Marked as deprecated in proto file:silent",
     "-Wconf:msg=pattern selector should be an instance of Matchable:silent",
@@ -103,8 +111,6 @@ lazy val root = project
 
       "ch.qos.logback" % "logback-classic" % logbackVersion,
       "org.slf4j" % "slf4j-api" % slf4jVersion,
-      //"org.slf4j" % "jul-to-slf4j" % slf4jVersion,
-      //"org.slf4j" % "log4j-over-slf4j" % slf4jVersion,
 
       "com.madgag.spongycastle" % "core" % "1.58.0.0",
       "org.bouncycastle" % "bcpkix-jdk18on" % "1.78.1",
@@ -112,12 +118,17 @@ lazy val root = project
       //https://tarao.orezdnu.org/record4s/
       //"com.github.tarao" %% "record4s" % "0.13.0",
 
-      "io.aeron" % "aeron-driver" % "1.45.0",
-      "io.aeron" % "aeron-client" % "1.45.0",
+      "io.aeron" % "aeron-driver" % "1.46.0", //is jdk17 only
+      "io.aeron" % "aeron-client" % "1.46.0",
+      //agrona-1.23.1
 
       "org.wvlet.airframe" %% "airframe-ulid" % "24.7.1",
       "com.github.bastiaanjansen" % "otp-java" % "2.0.3",
       "com.datastax.oss" % "java-driver-core" % "4.17.0",
+
+      //https://ratis.apache.org/
+      //https://youtu.be/ef9QVG5RSWs?list=LL
+      //"org.apache.ratis" % "ratis-server" % "3.1.1" % "provided",
 
       ("com.lihaoyi" % "ammonite" % AmmoniteVersion % "test" cross CrossVersion.full)
         .exclude("com.thesamet.scalapb", "lenses_2.13")
@@ -192,8 +203,10 @@ lazy val root = project
     ThisBuild / dynverSeparator := "-",
     javaOptions ++= Seq(
       //"-XX:+PrintFlagsFinal",
-      //"-XX:+PrintCommandLineFlags",
-      "-XshowSettings:system -version",
+      "-XX:+PrintCommandLineFlags",
+
+      //"-XshowSettings:system -version",
+      "-XshowSettings:all",
       
       //"-XX:+PrintGCDetails",
       //"-XshowSettings:vm",
@@ -247,6 +260,8 @@ lazy val root = project
       */
     ),
 
+    javaHome := Some(file("/Library/Java/JavaVirtualMachines/jdk-23.jdk/Contents/Home/")),
+    
     //comment out to run ammonite (test:run)
     run / fork := true,
     run / connectInput := true,
@@ -286,6 +301,6 @@ val unnamedJavaOptions = List(
   "--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED"
 )
 
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 ./target/scala-3.5.1/safer-chat-0.1.0.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC ./target/scala-3.5.1/safer-chat-0.1.0.jar
 //java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 ./target/scala-3.5.1/safer-chat-0.1.0.jar
 //show dependencyList
