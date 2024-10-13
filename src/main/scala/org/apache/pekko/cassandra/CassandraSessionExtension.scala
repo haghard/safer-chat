@@ -7,8 +7,6 @@ package org.apache.pekko.cassandra
 import org.apache.pekko.actor.*
 import com.datastax.oss.driver.api.core.*
 
-//import java.nio.file.Paths
-
 object CassandraSessionExtension extends ExtensionId[CassandraSessionExtension] with ExtensionIdProvider {
 
   override def get(system: ActorSystem): CassandraSessionExtension = super.get(system)
@@ -27,7 +25,7 @@ class CassandraSessionExtension(system: ActorSystem) extends Extension {
   val astraUrl = classOf[CassandraSessionExtension.type].getResource("/astra/schat-cloud.zip")
 
   // https://docs.datastax.com/en/developer/java-driver/4.17/manual/core/
-  val cqlSession = {
+  lazy val cqlSession = {
     val metricRegistry = new com.codahale.metrics.MetricRegistry()
 
     val session = CqlSession

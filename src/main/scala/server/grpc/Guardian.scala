@@ -40,7 +40,7 @@ object Guardian {
   val sessionDC = "session-DC"
 
   enum Protocol {
-    case SelfUpMsg(mbs: immutable.SortedSet[Member]) extends Protocol
+    // case SelfUpMsg(mbs: immutable.SortedSet[Member]) extends Protocol
     case SelfUpMsgMultiDc(mbs: Map[String, immutable.SortedSet[Member]]) extends Protocol
   }
 
@@ -73,8 +73,6 @@ object Guardian {
           )
 
         Behaviors.receive[Protocol] {
-          case (ctx, _ @Protocol.SelfUpMsg(membersByAge)) =>
-            ???
           case (ctx, _ @Protocol.SelfUpMsgMultiDc(membersByAgeDc)) =>
             import org.apache.pekko.cluster.*
 
@@ -92,7 +90,6 @@ object Guardian {
                 s"Cores:${rntm.availableProcessors()} Memory:[Total=${rntm.totalMemory() / 1000000}Mb, Max=${rntm
                     .maxMemory() / 1000000}Mb, Free=${rntm.freeMemory() / 1000000}Mb, RAM=${totalMemory / 1000000} ]"
 
-              // ${server.grpc.BuildInfo.toString}
               val isUpd = if (cluster.selfMember.appVersion.compareTo(shardCoordinator.appVersion) > 0) "✅" else "❌"
 
               ctx
@@ -162,7 +159,7 @@ object Guardian {
                           .PassivationStrategySettings
                           .defaults
                           // .withActiveEntityLimit(256) TODO:
-                          .withIdleEntityPassivation(30.seconds)
+                          // .withIdleEntityPassivation(30.seconds)
                       )
                   )
                   .withDataCenter(sessionDC)

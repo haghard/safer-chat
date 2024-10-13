@@ -1,5 +1,5 @@
 //https://github.com/apache/pekko-grpc/tags
-addSbtPlugin("org.apache.pekko" % "pekko-grpc-sbt-plugin" % "1.1.0-M1")
+addSbtPlugin("org.apache.pekko" % "pekko-grpc-sbt-plugin" % "1.1.0")
 
 addSbtPlugin("com.eed3si9n" % "sbt-assembly" % "2.2.0")
 

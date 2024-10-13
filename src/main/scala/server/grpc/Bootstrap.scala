@@ -16,6 +16,8 @@ object Bootstrap {
 
   def run(): Unit = {
     sys.props += "APP_VERSION" -> server.grpc.BuildInfo.version
+    // https://www.slf4j.org/faq.html#explicitProvider
+    sys.props += "slf4j.provider" -> classOf[ch.qos.logback.classic.spi.LogbackServiceProvider].getName
 
     given system: ActorSystem[Nothing] = {
       val cfg = ConfigFactory.load("application.conf").withFallback(ConfigFactory.load())

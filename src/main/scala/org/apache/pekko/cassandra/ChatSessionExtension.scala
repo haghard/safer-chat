@@ -34,9 +34,10 @@ object ChatSessionExtension extends ExtensionId[ChatSessionExtension] with Exten
 class ChatSessionExtension(system: ActorSystem) extends Extension {
   given typedSystem: org.apache.pekko.actor.typed.ActorSystem[?] = system.toTyped
 
-  val cDetails = Cluster(system).selfMember.details3()
-
   private val profileName = "default"
+  private val cDetails = Cluster(system).selfMember.details3()
+  private val parallelism = system.settings.config.getInt("cassandra.parallelism")
+  private val maxBatchSize = system.settings.config.getInt("cassandra.max-batch-size")
 
   given ord: scala.math.Ordering[ServerCmd] with {
     def compare(x: ServerCmd, y: ServerCmd): Int =
@@ -131,7 +132,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
 
   }
 
-  /*def chatRoomSessionsSink0(
+  /*def chatSessionsSinkImpl0(
     clusterMemberDetails: String
   )(using system: ActorSystem[?]
   ): (Sink[ServerCmd, NotUsed], KillSwitch) = {
@@ -197,11 +198,9 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
     *
     * In addition to that, it's being used to limit a number of concurrent writes to Cassandra.
     */
-  def chatSessionsSinkImpl(
+  private def chatSessionsSinkImpl(
       clusterMemberDetails: String
     ): (Sink[ServerCmd, NotUsed], KillSwitch) = {
-    val parallelism = system.settings.config.getInt("cassandra.parallelism")
-    val maxBatchSize = system.settings.config.getInt("cassandra.max-batch-size")
 
     given PreparedStatement = cqlSession.prepare(
       SimpleStatement

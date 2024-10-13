@@ -4,11 +4,10 @@
 
 import server.grpc.*
 
-object Main extends Ops {
-
-  def main(args: Array[String]): Unit = {
-    val opts: Map[String, String] = argsToOpts(args.toList)
-    applySystemProperties(opts)
-    Bootstrap.run()
-  }
+@main def chatServer(args: String*): Unit = {
+  val cliArgs = new CliArgs {}
+  cliArgs.applySystemProperties(
+    cliArgs.argsToOpts(args)
+  )
+  Bootstrap.run()
 }
