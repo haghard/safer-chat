@@ -1,10 +1,11 @@
-val scala3Version = "3.5.1"
+val scala3Version = "3.5.2"
+//val scala3Version = "3.6.1"
 
 //https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.1.html
 //https://github.com/apache/pekko/tags
 val pekkoV="1.1.2"
 
-val logbackVersion = "1.5.8"
+val logbackVersion = "1.5.11"
 val slf4jVersion   = "2.0.16"
 
 //https://github.com/apache/pekko-http/tags
@@ -319,6 +320,5 @@ val unnamedJavaOptions = List(
 
 
 /*
--Dslf4j.provider=ch.qos.logback.classic.spi.LogbackServiceProvider
 java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC -jar ./target/scala-3.5.1/safer-chat-0.1.1.jar
 */

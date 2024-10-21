@@ -29,7 +29,6 @@ final case class ChatState(
     val allUsers = self.registeredParticipants + newUser
     self.copy(
       registeredParticipants = allUsers,
-      // cdc = ParticipantAdded(allUsers.mkString(","), chat, replyTo),
       cdc = ParticipantAddedV2(allUsers.map(_.raw()), chat, replyTo),
     )
   }

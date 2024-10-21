@@ -195,9 +195,10 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
 
   private def extractPartition(e: WriteOp): ChatName =
     e._2 match {
-      case CdcEnvelopeMessage.SealedValue.Created(cdc) => cdc.chat
-      case CdcEnvelopeMessage.SealedValue.Added(cdc)   => cdc.chat
-      case CdcEnvelopeMessage.SealedValue.AddedV2(cdc) => cdc.chat
+      case CdcEnvelopeMessage.SealedValue.Created(cdc) =>
+        cdc.chat
+      case CdcEnvelopeMessage.SealedValue.AddedV2(cdc) =>
+        cdc.chat
       case CdcEnvelopeMessage.SealedValue.Empty =>
         throw new Exception(s"Unsupported partition")
     }
@@ -249,16 +250,6 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
       case CdcEnvelopeMessage.SealedValue.Created(cdc) =>
         session
           .executeAsync(ps.bind(cdc.chat.raw(), Long.box(revision), ""))
-          .asScala
-          .map { _ =>
-            ReplyTo[ChatReply].toBase(cdc.replyTo).tell(ChatReply(cdc.chat))
-            Done
-          }
-      case CdcEnvelopeMessage.SealedValue.Added(cdc) =>
-        session
-          .executeAsync(
-            ps.bind(cdc.chat.raw(), Long.box(revision), cdc.participants)
-          )
           .asScala
           .map { _ =>
             ReplyTo[ChatReply].toBase(cdc.replyTo).tell(ChatReply(cdc.chat))
