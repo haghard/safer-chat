@@ -12,7 +12,7 @@ val slf4jVersion   = "2.0.16"
 val pekkoHttpV = "1.1.0"
 
 //https://github.com/apache/pekko-management/tags
-val PekkoManagementVersion = "1.0.0"
+val PekkoManagementVersion = "1.1.0"
 
 val ProjectName = "safer-chat"
 val AmmoniteVersion = "3.0.0"
@@ -44,6 +44,9 @@ lazy val scalac3Settings = Seq(
     "-Wconf:msg=qualifier will be deprecated in the future; it should be dropped:silent",
 
     "-Xfatal-warnings",
+
+    //https://github.com/hearnadam/kyo-workshop/blob/master/build.sbt
+    //"-Wconf:msg=(discarded.*value|pure.*statement):error",
 
     // "-Ytasty-reader",
     "-Wunused:imports",

@@ -10,7 +10,7 @@ addSbtPlugin("de.heikoseeberger" % "sbt-header" % "5.0.0")
 
 addSbtPlugin("com.github.sbt" % "sbt-dynver" % "5.0.1")
 addSbtPlugin("com.timushev.sbt" % "sbt-rewarn" % "0.1.3")
-addSbtPlugin("com.eed3si9n" % "sbt-buildinfo" % "0.11.0")
+addSbtPlugin("com.eed3si9n" % "sbt-buildinfo" % "0.13.0")
 
 addSbtPlugin("ch.epfl.scala" % "sbt-scalafix" % "0.13.0")
 
