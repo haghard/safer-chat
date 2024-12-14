@@ -39,10 +39,8 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
   private val parallelism = system.settings.config.getInt("cassandra.parallelism")
   private val maxBatchSize = system.settings.config.getInt("cassandra.max-batch-size")
 
-  given ord: scala.math.Ordering[ServerCmd] with {
-    def compare(x: ServerCmd, y: ServerCmd): Int =
-      x.timeUuid.toUnixTs().compareTo(y.timeUuid.toUnixTs())
-  }
+  given ord: scala.math.Ordering[ServerCmd] = (x: ServerCmd, y: ServerCmd) =>
+    x.timeUuid.toUnixTs().compareTo(y.timeUuid.toUnixTs())
 
   given logger: LoggingAdapter = system.log
 

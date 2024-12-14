@@ -1,5 +1,5 @@
-val scala3Version = "3.5.2"
-//val scala3Version = "3.6.1"
+//https://scala-lang.org/news/3.6.2
+val scala3Version = "3.6.2"
 
 //https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.1.html
 //https://github.com/apache/pekko/tags
@@ -17,11 +17,9 @@ val PekkoManagementVersion = "1.1.0"
 val ProjectName = "safer-chat"
 val AmmoniteVersion = "3.0.0"
 
-val AppVersion = "0.1.1"
+val AppVersion = "0.1.2"
 
-resolvers ++= Seq(
-  "Apache Snapshots" at "https://repository.apache.org/content/repositories/snapshots/"
-)
+resolvers ++= Seq("Apache Snapshots" at "https://repository.apache.org/content/repositories/snapshots/")
 
 //show scalacOptions
 lazy val scalac3Settings = Seq(
@@ -317,11 +315,11 @@ val unnamedJavaOptions = List(
 
 //java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC -jar ./target/scala-3.3.4/safer-chat-0.1.1.jar
 
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC ./target/scala-3.5.1/safer-chat-0.1.1.jar
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 ./target/scala-3.5.1/safer-chat-0.1.0.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC ./target/scala-3.6.2/safer-chat-0.1.2.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 ./target/scala-3.6.2/safer-chat-0.1.2.jar
 //show dependencyList
 
 
 /*
-java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC -jar ./target/scala-3.5.1/safer-chat-0.1.1.jar
+java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC -jar ./target/scala-3.6.2/safer-chat-0.1.2.jar
 */

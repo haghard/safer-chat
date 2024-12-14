@@ -242,8 +242,7 @@ object Domain {
 
   opaque type ReplyTo = String
   object ReplyTo extends Opq[ReplyTo, String] {
-
-    given apply[T](using resolver: ActorRefResolver): scalapb.TypeMapper[ActorRef[T], ReplyTo] =
+    def apply[T](using resolver: ActorRefResolver): scalapb.TypeMapper[ActorRef[T], ReplyTo] =
       TypeMapper[ActorRef[T], ReplyTo](ref => ReplyTo(resolver.toSerializationFormat(ref)))(replyTo =>
         resolver.resolveActorRef(replyTo.raw())
       )
