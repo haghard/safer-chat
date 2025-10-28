@@ -20,6 +20,7 @@ option (scalapb.options) = {
   no_default_values_in_constructor: false,
   no_primitive_wrappers: true,
   single_file: true,
+  scala3_sources: true,
   preamble: "sealed trait Cmd extends scalapb.GeneratedMessage"
 };
 

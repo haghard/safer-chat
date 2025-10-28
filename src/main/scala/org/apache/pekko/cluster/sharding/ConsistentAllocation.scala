@@ -71,9 +71,9 @@ final class ConsistentAllocation(rebalanceLimit: Int) extends ActorSystemDepende
     val sortedRegionEntries =
       regionEntriesFor(currentShardAllocations)
         .toVector
-        .sorted(AbstractLeastShardAllocationStrategy.ShardSuitabilityOrdering)
+        .sorted(using AbstractLeastShardAllocationStrategy.ShardSuitabilityOrdering)
 
-    if (isAGoodTimeToRebalance(sortedRegionEntries)) {
+    if isAGoodTimeToRebalance(sortedRegionEntries) then {
       val nodes = nodesForRegions(currentShardAllocations)
       updateHashing(nodes)
 
@@ -86,15 +86,15 @@ final class ConsistentAllocation(rebalanceLimit: Int) extends ActorSystemDepende
 
       currentShardAllocations
         .toVector
-        .sortBy { case (region, _) => nodeForRegion(region) }(Address.addressOrdering) // deterministic order
+        .sortBy { case (region, _) => nodeForRegion(region) }(using Address.addressOrdering) // deterministic order
         .foreach {
           case (currentRegion, shardIds) =>
             shardIds.foreach { shardId =>
-              if (lessThanLimit() && !rebalanceInProgress.contains(shardId)) {
+              if lessThanLimit() && !rebalanceInProgress.contains(shardId) then {
                 val node = ring.nodeFor(shardId)
                 regionByNode.get(node) match {
                   case Some(region) =>
-                    if (region != currentRegion) {
+                    if region != currentRegion then {
                       log.debug(
                         "Rebalance needed for shard [{}], from [{}] to [{}]",
                         shardId,
@@ -123,13 +123,12 @@ final class ConsistentAllocation(rebalanceLimit: Int) extends ActorSystemDepende
       .toVector
 
   private def nodeForRegion(region: ActorRef): Address =
-    if (region.path.address.hasLocalScope) selfMember.address else region.path.address
+    if region.path.address.hasLocalScope then selfMember.address else region.path.address
 
   private def updateHashing(nodes: Vector[Address]): Unit = {
     val sortedNodes = nodes.sorted
-    if (sortedNodes != hashedByNodes) {
-      if (log.isDebugEnabled)
-        log.debug("Update consistent hashing nodes [{}]", sortedNodes.mkString(", "))
+    if sortedNodes != hashedByNodes then {
+      if log.isDebugEnabled then log.debug("Update consistent hashing nodes [{}]", sortedNodes.mkString(", "))
       hashedByNodes = sortedNodes
       ring = ConsistentHash(sortedNodes, ConsistentAllocation.virtualNodesFactor)
     }
@@ -139,7 +138,7 @@ final class ConsistentAllocation(rebalanceLimit: Int) extends ActorSystemDepende
     // Avoid rebalance when rolling update is in progress
     // (This will ignore versions on members with no shard regions, because of sharding role or not yet completed joining)
     regionEntries.headOption match {
-      case None => false // empty list of regions, probably not a good time to rebalance...
+      case None              => false // empty list of regions, probably not a good time to rebalance...
       case Some(firstRegion) =>
         def allNodesSameVersion: Boolean =
           regionEntries.forall(_.member.appVersion == firstRegion.member.appVersion)
@@ -162,7 +161,7 @@ final class ConsistentAllocation(rebalanceLimit: Int) extends ActorSystemDepende
     currentShardAllocations.flatMap {
       case (region, shardIds) =>
         val regionAddress =
-          if (region.path.address.hasLocalScope) selfMember.address
+          if region.path.address.hasLocalScope then selfMember.address
           else region.path.address
 
         val memberForRegion = addressToMember.get(regionAddress)

@@ -12,7 +12,7 @@ trait CliArgs {
   }
 
   def applySystemProperties(kvs: Map[String, String]): Unit =
-    for ((key, value) <- kvs if key.startsWith("-D")) {
+    for (key, value) <- kvs if key.startsWith("-D") do {
       val k = key.substring(2)
       println(s"Set $k: $value")
       sys.props += k -> value

@@ -27,13 +27,14 @@ object ChatRoomSession {
 
   val TypeKey = EntityTypeKey[ChatRoomCmd]("session")
 
-  def shardingMessageExtractor(): ShardingMessageExtractor[ChatRoomCmd, ChatRoomCmd] =
+  def shardingMessageExtractor(numberOfShards: Int): ShardingMessageExtractor[ChatRoomCmd, ChatRoomCmd] =
     new ShardingMessageExtractor[ChatRoomCmd, ChatRoomCmd] {
       override def entityId(cmd: ChatRoomCmd): String =
         cmd.chat.raw()
-      // one entity per chat|shard to isolate rebalancing. We want to rebalance one chat|shard at a time
+
       override def shardId(entityId: String): String =
-        entityId
+        math.abs(entityId.hashCode % numberOfShards).toString
+
       override def unwrapMessage(cmd: ChatRoomCmd): ChatRoomCmd =
         cmd
     }
@@ -174,7 +175,7 @@ object ChatRoomSession {
       case Disconnect(user, chatName, otp) =>
         val updatedOnlineUsers = state.onlineUsers - user
         ctx.log.info(s"User({}). Closed session:{}", user.raw(), otp.raw())
-        if (updatedOnlineUsers.isEmpty) {
+        if updatedOnlineUsers.isEmpty then {
           state.ks.foreach(_.shutdown())
           Option(kss.remove(chatName)).foreach(_.shutdown())
           Behaviors.stopped

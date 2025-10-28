@@ -13,7 +13,8 @@ import shared.Domain.*
 final case class ChatState(
     name: Option[ChatName] = None,
     registeredParticipants: HashSet[Participant] = HashSet.empty[Participant],
-    cdc: CdcEnvelope = CdcEnvelope.defaultInstance) { self =>
+    cdc: CdcEnvelope = CdcEnvelope.defaultInstance) {
+  self =>
 
   def withName(chatName: ChatName, replyTo: ReplyTo): ChatState =
     self.copy(

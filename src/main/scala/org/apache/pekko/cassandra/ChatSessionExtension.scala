@@ -23,6 +23,9 @@ import CassandraStore.*
 
 object ChatSessionExtension extends ExtensionId[ChatSessionExtension] with ExtensionIdProvider {
 
+  given ord: scala.math.Ordering[ServerCmd] = (x: ServerCmd, y: ServerCmd) =>
+    x.timeUuid.toUnixTs().compareTo(y.timeUuid.toUnixTs())
+
   override def get(system: ActorSystem): ChatSessionExtension = super.get(system)
 
   override def lookup: ChatSessionExtension.type = ChatSessionExtension
@@ -35,12 +38,9 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
   given typedSystem: org.apache.pekko.actor.typed.ActorSystem[?] = system.toTyped
 
   private val profileName = "default"
-  private val cDetails = Cluster(system).selfMember.details3()
+  private val cDetails = Cluster(system).selfMember.clusterMemberDetails()
   private val parallelism = system.settings.config.getInt("cassandra.parallelism")
   private val maxBatchSize = system.settings.config.getInt("cassandra.max-batch-size")
-
-  given ord: scala.math.Ordering[ServerCmd] = (x: ServerCmd, y: ServerCmd) =>
-    x.timeUuid.toUnixTs().compareTo(y.timeUuid.toUnixTs())
 
   given logger: LoggingAdapter = system.log
 
@@ -84,7 +84,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
             logger.error(s"Write error $chatName: $ts. Error:${ex.getMessage()}")
             asyncResult
         }
-      }(ExecutionContext.parasitic)
+      }(using ExecutionContext.parasitic)
   }
 
   private def writeBatch(
@@ -126,7 +126,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
             logger.error(s"WriteBatch error: $chatName: [$revisions]. Error:${ex.getMessage()}")
             asyncResult
         }
-      }(ExecutionContext.parasitic)
+      }(using ExecutionContext.parasitic)
 
   }
 
@@ -185,10 +185,9 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
   }*/
 
   /** Imagine you would have a high number of users connected to a local node, and they all write messages. We need a
-    * way to backpressure (flow control) this traffic all the way from the tcp receive buffer to Cassandra. (GRPC
-    * server) -> Cassandra
+    * way to backpressure (flow control) this traffic all the way from the tcp receive buffer to Cassandra.
     *
-    * More specifically, we don't want to read from the tcp socket (receive buffer) if the Cassandra client it not
+    * More specifically, we don't want to read from the tcp socket (receive buffer) if the Cassandra client it's not
     * writing the messages quickly enough.
     *
     * Creates a shared sink to be used by all connected to this node users to be able to consume and write message to
@@ -207,7 +206,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
         .build()
     )
 
-    // keeps consuming from the the receive-buffer and aggregate state in memory
+    // keeps consuming from the receive-buffer and aggregate state in memory
     MergeHub
       .source[ServerCmd](perProducerBufferSize = 1) // TODO: MergeHub -> head-of-line blocking ???
       // .log("cassandra-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}")(logger)
@@ -217,7 +216,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
         StreamMonitor("c*-hub", cmd => s"${cmd.chat.raw()}.${cmd.userInfo.user.raw()} at ${cmd.timeUuid.toUnixTs()}")
       )
       .viaMat(KillSwitches.single)(Keep.both)
-      .groupedWithin(maxBatchSize, 100.millis) // puts upper cap on write latency
+      .groupedWithin(maxBatchSize, 80.millis) // Puts 80mls upper cap on write latency
       // .wireTap(printStats("CassandraSink.stats:", 30.seconds))
       .via(
         ThroughputMonitor(
@@ -235,11 +234,11 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
                   case 1 =>
                     () => writeSingleMsg(batchPerChat.head)
                   case n =>
-                    () => writeBatch(mutable.SortedSet.from(batchPerChat))
+                    () => writeBatch(mutable.SortedSet.from(batchPerChat)(using ChatSessionExtension.ord))
                 }
               pattern.retry(writeFunc, Int.MaxValue, 3.seconds)
             }
-            .map(_ => ())(ExecutionContext.parasitic)
+            .map(_ => ())(using ExecutionContext.parasitic)
         }
       )
       .run()

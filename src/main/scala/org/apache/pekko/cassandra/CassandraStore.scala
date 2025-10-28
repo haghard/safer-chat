@@ -58,10 +58,10 @@ object CassandraStore {
            |""".stripMargin
 
       val it = profile.entrySet().iterator()
-      log.info("★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★  CASSANDRA: all settings ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★")
-      while (it.hasNext()) {
-        val e = it.next()
-        println(s"${e.getKey()}=${e.getValue()}")
+      log.info("★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★  CASSANDRA settings ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★")
+      while it.hasNext() do {
+        val kv = it.next()
+        println(s"${kv.getKey()}=${kv.getValue()}")
       }
       log.info("★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★")
 
@@ -105,7 +105,7 @@ object CassandraStore {
       .to(Sink.foreach(cnt => log.warning(s" ★ ★ ★ ★ $msg NumOfMsg:$cnt in last $duration")))
       .withAttributes(Attributes.inputBuffer(1, 1))
 
-  val chatDetailsDDL =
+  val chatDetailsDDL = {
     """
       |CREATE TABLE IF NOT EXISTS chat_details (
       |   chat text,
@@ -114,6 +114,15 @@ object CassandraStore {
       |   PRIMARY KEY (chat)
       |);
       |""".stripMargin
+
+    """
+      |CREATE TABLE IF NOT EXISTS timeline2 (
+      |   chat text,
+      |   messageid timeuuid,
+      |   message blob,
+      |   PRIMARY KEY (chat, messageid)) WITH CLUSTERING ORDER BY (messageid DESC);
+      |""".stripMargin
+  }
 
   val chatTimelineDDL =
     """
@@ -136,7 +145,7 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
       given scheduler: org.apache.pekko.actor.Scheduler = system.scheduler
       given cqlSession: CqlSession = CassandraSessionExtension(system).cqlSession
 
-      val to = 3.seconds //
+      val to = 3.seconds
 
       cqlSession.execute(CassandraStore.chatDetailsDDL)
       cqlSession.execute(CassandraStore.chatTimelineDDL)

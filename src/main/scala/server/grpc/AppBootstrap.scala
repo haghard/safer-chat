@@ -35,8 +35,8 @@ object AppBootstrap {
 
   def leaseOwnerFromAkkaMember(classicSystemName: String, addr: Address): String = {
     val sb = new java.lang.StringBuilder().append(classicSystemName)
-    if (addr.host.isDefined) sb.append('@').append(addr.host.get)
-    if (addr.port.isDefined) sb.append(':').append(addr.port.get)
+    if addr.host.isDefined then sb.append('@').append(addr.host.get)
+    if addr.port.isDefined then sb.append(':').append(addr.port.get)
     sb.toString
   }
 
@@ -75,7 +75,7 @@ object AppBootstrap {
     val terminationDeadline =
       sys.settings.config.getDuration("pekko.coordinated-shutdown.default-phase-timeout").asScala
 
-    Http()(sys)
+    Http()(using sys)
       .newServerAt(sys.settings.config.getString("pekko.remote.artery.canonical.hostname"), appCfg.httpPort)
       .enableHttps(serverHttpContext(sys.log))
       .bind(new RestApi().jvm)
@@ -168,7 +168,7 @@ object AppBootstrap {
 
     val shutdown = CoordinatedShutdown(sys)
 
-    Http()(sys)
+    Http()(using sys)
       .newServerAt(host, appCfg.grpcPort)
       .enableHttps(serverHttpContext(sys.log))
       .bind(grpcService)

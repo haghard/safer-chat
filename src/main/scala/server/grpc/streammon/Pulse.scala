@@ -22,17 +22,17 @@ final class Pulse[T](interval: FiniteDuration, initiallyOpen: Boolean = false) e
       self =>
       setHandlers(in, out, self)
 
-      override def preStart(): Unit = if (!initiallyOpen) startPulsing()
+      override def preStart(): Unit = if !initiallyOpen then startPulsing()
 
-      override def onPush(): Unit = if (isAvailable(out)) push(out, grab(in))
+      override def onPush(): Unit = if isAvailable(out) then push(out, grab(in))
 
-      override def onPull(): Unit = if (!pulsing) {
+      override def onPull(): Unit = if !pulsing then {
         pull(in)
         startPulsing()
       }
 
       override protected def onTimer(timerKey: Any): Unit =
-        if (isAvailable(out) && !isClosed(in) && !hasBeenPulled(in)) pull(in)
+        if isAvailable(out) && !isClosed(in) && !hasBeenPulled(in) then pull(in)
 
       private def startPulsing(): Unit = {
         pulsing = true

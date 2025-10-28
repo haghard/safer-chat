@@ -16,6 +16,6 @@ extension (member: Member) {
   def details2(): String =
     s"${member.uniqueAddress.address}:${member.upNumber}:${member.dataCenter}"
 
-  def details3(): String =
+  def clusterMemberDetails(): String =
     s"${member.uniqueAddress.address.host.getOrElse("")},UpNum(${member.upNumber}),AppVer(${member.appVersion},DC:${member.dataCenter}))"
 }

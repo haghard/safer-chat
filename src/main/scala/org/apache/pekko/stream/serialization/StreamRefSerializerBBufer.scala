@@ -45,8 +45,8 @@ actor {
 
 final class StreamRefSerializerBBufer(val system: ExtendedActorSystem)
     extends org.apache.pekko.serialization.SerializerWithStringManifest
-    with SerializationSupport
-    with ByteBufferSerializer {
+       with SerializationSupport
+       with ByteBufferSerializer {
 
   // val logger = system.log
 
@@ -209,7 +209,7 @@ final class StreamRefSerializerBBufer(val system: ExtendedActorSystem)
       .setSerializerId(msgSerializer.identifier)
 
     val ms = org.apache.pekko.serialization.Serializers.manifestFor(msgSerializer, p)
-    if (ms.nonEmpty) payloadBuilder.setMessageManifest(ByteString.copyFromUtf8(ms))
+    if ms.nonEmpty then payloadBuilder.setMessageManifest(ByteString.copyFromUtf8(ms))
 
     StreamRefMessages.SequencedOnNext.newBuilder().setSeqNr(o.seqNr).setPayload(payloadBuilder.build()).build()
   }

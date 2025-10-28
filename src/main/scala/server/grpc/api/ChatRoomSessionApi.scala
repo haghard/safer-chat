@@ -61,6 +61,8 @@ final class ChatRoomSessionApi(
               authSrc.via(flow(chatRoomRegion, authMsg, user))
             }
           }
+      case _ =>
+        Source.empty
     }
 
   private def flow(
@@ -96,11 +98,11 @@ final class ChatRoomSessionApi(
       }
 
   private def chatRoomFlow(
-      chatRoomRegion: ActorRef[ChatRoomCmd],
+      chatRoomSessionRegion: ActorRef[ChatRoomCmd],
       authMsg: ClientCmd,
       user: Participant,
     ): Future[Flow[ClientCmd, ServerCmd, NotUsed]] =
-    chatRoomRegion
+    chatRoomSessionRegion
       .ask[ChatReply](replyTo => ConnectRequest(authMsg.chat, user, authMsg.otp, ReplyTo[ChatReply].toCustom(replyTo)))
       .map { reply =>
         reply.statusCode match {
@@ -161,7 +163,7 @@ final class ChatRoomSessionApi(
                 logger.info("{}@{} StreamRef connection has been established", authMsg.chat, user)
                 done.onComplete { _ =>
                   logger.info("{}@{} StreamRef connection has been closed", authMsg.chat, user)
-                  chatRoomRegion.tell(Disconnect(user, authMsg.chat, authMsg.otp))
+                  chatRoomSessionRegion.tell(Disconnect(user, authMsg.chat, authMsg.otp))
                 }
                 NotUsed
               }

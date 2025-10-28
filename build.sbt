@@ -1,27 +1,34 @@
-//https://scala-lang.org/news/3.6.2
-val scala3Version = "3.6.2"
+//https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.2.html
 
-//https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.1.html
+//https://github.com/scala/scala3/releases/tag/3.3.7
+//val scala3Version = "3.3.7"
+
+//https://www.scala-lang.org/news/3.7.3
+val scala3Version = "3.7.3"
+
 //https://github.com/apache/pekko/tags
-val pekkoV="1.1.2"
+val pekkoV = "1.2.1"
 
-val logbackVersion = "1.5.11"
-val slf4jVersion   = "2.0.16"
+val logbackVersion = "1.5.20"
+val slf4jVersion = "2.0.17"
 
 //https://github.com/apache/pekko-http/tags
-val pekkoHttpV = "1.1.0"
+val pekkoHttpV = "1.3.0"
 
 //https://github.com/apache/pekko-management/tags
-val PekkoManagementVersion = "1.1.0"
+val PekkoManagementVersion = "1.1.1"
 
 val ProjectName = "safer-chat"
-val AmmoniteVersion = "3.0.0"
+val AmmoniteVersion = "3.0.3"
 
-val AppVersion = "0.1.2"
+val jvmVersion = "17"
+
+val AppVersion = "0.1.3"
 
 resolvers ++= Seq("Apache Snapshots" at "https://repository.apache.org/content/repositories/snapshots/")
 
 //show scalacOptions
+//https://docs.scala-lang.org/scala3/guides/migration/options-new.html
 lazy val scalac3Settings = Seq(
   scalacOptions ++= Seq(
     "-deprecation",
@@ -30,7 +37,11 @@ lazy val scalac3Settings = Seq(
     "-unchecked",
     //"-Xkind-projector",
     //"-Wsafe-init",
+    //"-Yexplicit-nulls",
     "-language:adhocExtensions",
+
+    s"-release:$jvmVersion",
+    //"-java-output-version:17",
 
     //https://www.scala-lang.org/blog/2022/04/12/scala-3.1.2-released.html
     //-release is now -java-output-version, and -Xtarget is -Xunchecked-java-output-version.
@@ -48,8 +59,17 @@ lazy val scalac3Settings = Seq(
 
     // "-Ytasty-reader",
     "-Wunused:imports",
-    "-no-indent", // forces to use braces
-  ) ++ Seq("-rewrite" /*, "-indent"*/ ) ++ Seq("-source", "future-migration")
+    "-no-indent", //Require classical {…} syntax, indentation is not significant.(forces to use braces)
+
+    //"-rewrite", "-source:3.6-migration",
+    "-rewrite", //When used in conjunction with a ...-migration source version, rewrites sources to migrate to new version.
+    //"-source:3.6-migration",
+    "-source:future-migration",
+
+  ) //++ Seq("-rewrite") ++ Seq("-source", "3.6-migration"),
+  //Seq("-rewrite", "-source", "3.5-migration"),
+  //https://docs.scala-lang.org/scala3/guides/migration/tooling-migration-mode.html
+  //https://www.scala-lang.org/development/
 )
 
 lazy val root = project
@@ -69,26 +89,26 @@ lazy val root = project
     developers := List(Developer("haghard", "Vadim Bondarev", "haghard84@gmail.com", url("https://github.com/haghard"))),
 
     // sbt headerCreate
-    licenses += ("Apache-2.0", new java.net.URL("https://www.apache.org/licenses/LICENSE-2.0.txt")),
+    licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0.txt")),
     headerMappings := headerMappings.value + (HeaderFileType.scala -> HeaderCommentStyle.cppStyleLineComment),
     headerLicense := Some(
       HeaderLicense.Custom(
-        """|Copyright (c) 2024 by Vadim Bondarev
+        """|Copyright (c) 2024-25 by Vadim Bondarev
            |This software is licensed under the Apache License, Version 2.0.
            |You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0.
            |""".stripMargin
       )
     ),
-    
+
     libraryDependencies ++= Seq(
       //  show dependencyList
       "org.apache.pekko" %% "pekko-http" % pekkoHttpV,
-      "org.apache.pekko" %% "pekko-http-spray-json"% pekkoHttpV,
+      "org.apache.pekko" %% "pekko-http-spray-json" % pekkoHttpV,
 
       "org.apache.pekko" %% "pekko-protobuf-v3" % pekkoV,
       "org.apache.pekko" %% "pekko-actor-typed" % pekkoV,
-      "org.apache.pekko" %% "pekko-cluster-sharding-typed" % pekkoV,
-        //.excludeAll(ExclusionRule(organization = "org.apache.pekko", name = "pekko-protobuf-v3")),
+      ("org.apache.pekko" %% "pekko-cluster-sharding-typed" % pekkoV)
+        .excludeAll(ExclusionRule(organization = "org.apache.pekko", name = "pekko-protobuf-v3")),
         //.exclude("org.slf4j", "slf4j-api")
 
       "org.apache.pekko" %% "pekko-distributed-data" % pekkoV,
@@ -102,43 +122,26 @@ lazy val root = project
       "org.apache.pekko" %% "pekko-management-cluster-bootstrap" % PekkoManagementVersion,
       "org.apache.pekko" %% "pekko-management-cluster-http" % PekkoManagementVersion,
 
-      //protobuf-java-3.21.12.jar, jar org = com.google.protobuf, entry target = google/protobuf/struct.proto
-
-      //https://pekko.apache.org/docs/pekko-persistence-r2dbc/current/query.html#publish-events-for-lower-latency-of-eventsbyslices
-      //"org.apache.pekko" %% "pekko-persistence-r2dbc" % "1.0.0",
-
       "org.apache.pekko" %% "pekko-slf4j" % pekkoV,
-      "ch.qos.logback" % "logback-classic" %  logbackVersion,
-      "org.slf4j"      % "slf4j-api"       %  slf4jVersion,
+      "ch.qos.logback" % "logback-classic" % logbackVersion,
+      "org.slf4j" % "slf4j-api" % slf4jVersion,
 
       "com.madgag.spongycastle" % "core" % "1.58.0.0",
-      "org.bouncycastle" % "bcpkix-jdk18on" % "1.78.1",
+      "org.bouncycastle" % "bcpkix-jdk18on" % "1.82",
 
-      //https://tarao.orezdnu.org/record4s/
-      //"com.github.tarao" %% "record4s" % "0.13.0",
+      "io.aeron" % "aeron-driver" % "1.46.6", //is jdk17 only
+      "io.aeron" % "aeron-client" % "1.46.6",
 
-      "io.aeron" % "aeron-driver" % "1.46.0", //is jdk17 only
-      "io.aeron" % "aeron-client" % "1.46.0",
-
-      "org.wvlet.airframe" %% "airframe-ulid" % "24.7.1",
-      "com.github.bastiaanjansen" % "otp-java" % "2.0.3",
+      "org.wvlet.airframe" %% "airframe-ulid" % "2025.1.21",
+      "com.github.bastiaanjansen" % "otp-java" % "2.1.0",
       "com.datastax.oss" % "java-driver-core" % "4.17.0",
 
-      //https://ratis.apache.org/
-      //https://youtu.be/ef9QVG5RSWs?list=LL
-      //"org.apache.ratis" % "ratis-server" % "3.1.1" % "provided",
+      "org.creativescala" %%% "terminus-core" % "0.4.0",
 
-      /*("com.lihaoyi" % "ammonite" % AmmoniteVersion % "test" cross CrossVersion.full)
+      ("com.lihaoyi" % "ammonite" % AmmoniteVersion % "test" cross CrossVersion.full)
         .exclude("com.thesamet.scalapb", "lenses_2.13")
         .exclude("com.thesamet.scalapb", "scalapb-runtime_2.13")
         .exclude("org.slf4j", "slf4j-api"),
-      */
-      
-      //https://github.com/scalag/scalag/blob/master/build.sbt
-      //https://github.com/dialex/JColor
-      //https://github.com/ComputeNode/scalag/blob/master/build.sbt
-      //"com.lihaoyi" % "pprint_3" % "0.9.0",
-      //"com.diogonunes" % "JColor" % "5.5.1",
     ),
 
     dependencyOverrides ++= Seq(
@@ -176,11 +179,9 @@ lazy val root = project
       case PathList("META-INF", _*) => MergeStrategy.discard
       case PathList(xs @ _*) if xs.last == "io.netty.versions.properties" => MergeStrategy.rename
       case PathList("module-info.class") => MergeStrategy.discard
-      /*
-      https://github.com/akka/akka/issues/29456
+      //https://github.com/akka/akka/issues/29456
       case PathList("google", "protobuf", _)    => MergeStrategy.discard
       case PathList("google", "protobuf", _, _) => MergeStrategy.discard
-      */
       case x =>
         val oldStrategy = (assembly / assemblyMergeStrategy).value
         oldStrategy(x)
@@ -204,6 +205,7 @@ lazy val root = project
       sbtVersion,
       "gitHash" -> SbtUtils.fullGitHash.getOrElse(""),
       "gitBranch" -> SbtUtils.branch.getOrElse(""),
+      BuildInfoKey.action("buildTime")(System.currentTimeMillis),
     ),
     dynverSeparator := "-",
     scalaBinaryVersion := "3", //"2.13"
@@ -216,7 +218,7 @@ lazy val root = project
 
       //"-XshowSettings:system -version",
       "-XshowSettings:all",
-      
+
       //"-XX:+PrintGCDetails",
       //"-XshowSettings:vm",
 
@@ -251,7 +253,7 @@ lazy val root = project
       "--add-opens", "java.base/sun.nio.ch=ALL-UNNAMED",
 
       //"--add-opens", "java.base/java.nio=ALL-UNNAMED",
-      
+
       //https://youtu.be/vh4qAsxegNY?list=LL
 
       //https://github.com/docker-library/docs/blob/2bb63e73456f4bc836c5e42d6871131a82e548f1/openjdk/content.md?plain=1#L56
@@ -270,11 +272,14 @@ lazy val root = project
       */
     ),
 
-    javaHome := Some(file("/Library/Java/JavaVirtualMachines/jdk-17.jdk/Contents/Home/")),
+    javaHome := Some(file(s"/Library/Java/JavaVirtualMachines/jdk-${jvmVersion}.jdk/Contents/Home/")),
     //javaHome := Some(file("/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home/")),
     //javaHome := Some(file("/Library/Java/JavaVirtualMachines/jdk-23.jdk/Contents/Home/")),
-    
-    //comment out to run ammonite (test:run)
+
+    //https://javaalmanac.io/bytecode/versions/
+    javacOptions ++= Seq("-source", jvmVersion, "-target", jvmVersion),
+
+    //comment out if you want to run KeygenApp
     run / fork := true,
     run / connectInput := true,
   )
@@ -290,9 +295,10 @@ Test / sourceGenerators += Def.task {
   Seq(file)
 }.taskValue
 
+//sbt -Dsbt.task.timings=true -Dsbt.traces=true c
 addCommandAlias("c", "scalafmt;compile")
 addCommandAlias("r", "reload")
-addCommandAlias("ca", "clean;assembly")
+addCommandAlias("asm", "clean;assembly")
 
 // See https://github.com/apache/spark/blob/v3.3.2/launcher/src/main/java/org/apache/spark/launcher/JavaModuleOptions.java
 val unnamedJavaOptions = List(
@@ -313,13 +319,10 @@ val unnamedJavaOptions = List(
   "--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED"
 )
 
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC -jar ./target/scala-3.3.4/safer-chat-0.1.1.jar
 
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC ./target/scala-3.6.2/safer-chat-0.1.2.jar
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 ./target/scala-3.6.2/safer-chat-0.1.2.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC -jar ./target/scala-3.7.3/safer-chat-0.1.3.jar
+
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 -Dpekko.cluster.multi-data-center.self-data-center=session-DC ./target/scala-3.7.3/safer-chat-0.1.3.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.3 -Dpekko.management.http.hostname=127.0.0.3 -Dpekko.cluster.multi-data-center.self-data-center=session-DC ./target/scala-3.7.3/safer-chat-0.1.3.jar
 //show dependencyList
 
-
-/*
-java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC -jar ./target/scala-3.6.2/safer-chat-0.1.2.jar
-*/

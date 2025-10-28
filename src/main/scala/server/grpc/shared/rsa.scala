@@ -5,8 +5,7 @@
 package shared
 
 import java.io.*
-import java.nio.charset.StandardCharsets
-import java.nio.charset.StandardCharsets.*
+import java.nio.charset.*
 import java.security.*
 import javax.crypto.Cipher
 import scala.util.Using
@@ -20,14 +19,14 @@ object rsa {
       cipher.init(Cipher.ENCRYPT_MODE, pubKey)
       Using.resource(new ByteArrayOutputStream()) { out =>
         val blockSize = cipher.getBlockSize()
-        val payload = msg.getBytes(UTF_8)
+        val payload = msg.getBytes(StandardCharsets.UTF_8)
         val payloadLength = payload.length
 
         var offset = 0
         var end = 0
-        while (end < payloadLength) {
+        while end < payloadLength do {
           end = end + blockSize
-          if (end > payloadLength) {
+          if end > payloadLength then {
             end = payloadLength
           }
 
@@ -48,12 +47,12 @@ object rsa {
 
         var offset = 0
         var end = 0
-        while (offset < payloadLength) {
+        while offset < payloadLength do {
           end = end + blockSize
-          if (end > payloadLength) end = payloadLength
+          if end > payloadLength then end = payloadLength
           val len = end - offset
           val chunk = cipher.doFinal(bts, offset, len)
-          wrt.write(new String(chunk, UTF_8))
+          wrt.write(new String(chunk, StandardCharsets.UTF_8))
           offset = end
         }
         wrt.toString()

@@ -102,9 +102,8 @@ object ChatRoomClient {
           .map { case (_, i) => i }
           .takeWhile(_ < 100)
           .map { _ =>
-
             // Each time a message is sent, it is encrypted using each participant's public key and send to the server which knows how to broadcast it to the participants.
-            // We encrypt the same message to each user using theirs pub key
+            // We encrypt each message N times
             val msgContent = genMsg(userName)
 
             var content: scala.collection.immutable.Map[String, com.google.protobuf.ByteString] = Map.empty
@@ -146,14 +145,14 @@ object ChatRoomClient {
     val sender = serverCmd.userInfo.user.raw()
     ChatUser.recoverFromPubKey(serverCmd.userInfo.pubKey.toStringUtf8()) match {
       case Some(pubKey) =>
-        if (userPubKeys.putIfAbsent(sender, pubKey) == null) {
+        if userPubKeys.putIfAbsent(sender, pubKey) == null then {
           logger.warn(s"★ ★ ★ ★ ★ ★ $sender joined ★ ★ ★ ★ ★ ★")
         }
       case None =>
         logger.warn(s"★ ★ ★ Got invalid PubKey($sender)  ★ ★ ★")
     }
 
-    // Example: alice wrote this msg to bob using bob's pub key
+    // Example: alice wrote this msg to bob using the Bob's pub key
     serverCmd.content.get(user.handle.toString) match {
       case Some(msgBts) =>
         try {
@@ -183,14 +182,17 @@ object ChatRoomClient {
   }
 
   @main def main(args: String*): Unit = {
-    val userName = if (args.isEmpty) throw new Exception("Expected <username> !") else args(0)
+    val userName = if args.isEmpty then throw new Exception("Expected <username> !") else args(0)
     val cfg = ConfigFactory.load("client.conf")
 
     given sys: ActorSystem[Nothing] = ActorSystem(Behaviors.empty, "client", cfg)
     given ec: ExecutionContext = sys.executionContext
     given logger: Logger = sys.log
 
-    println(sys.settings.config.getConfig("pekko.grpc.client").toString)
+    import scala.io.AnsiColor
+    println(
+      s"${AnsiColor.CYAN}>>> ${sys.settings.config.getConfig("pekko.grpc.client").toString} <<<${AnsiColor.RESET}"
+    )
 
     given crClient: server.grpc.admin.ChatRoomClient =
       server
@@ -241,7 +243,8 @@ object ChatRoomClient {
         _ <- crClient.addChat(ChatReq(chatName))
         _ <- crClient.addUser(UserReq(chatName, Participant(chatUsr.handle.toString)))
         done <- postMessages(chatUsr, defaultUsr, appConf, userName, userPubKeys)
-      } yield done
+      }
+      yield done
 
     doneF.onComplete { code =>
       sys.log.warn(s"Exit: $code")

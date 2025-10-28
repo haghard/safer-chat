@@ -36,9 +36,6 @@ import scala.jdk.CollectionConverters.*
 
 object Guardian {
 
-  val chatDC = "chat-DC"
-  val sessionDC = "session-DC"
-
   enum Protocol {
     // case SelfUpMsg(mbs: immutable.SortedSet[Member]) extends Protocol
     case SelfUpMsgMultiDc(mbs: Map[String, immutable.SortedSet[Member]]) extends Protocol
@@ -62,11 +59,9 @@ object Guardian {
                       .members
                       .groupBy[String](_.dataCenter)
                       .view
-                      .mapValues(immutable.SortedSet.from(_)(Member.ageOrdering))
+                      .mapValues(immutable.SortedSet.from(_)(using Member.ageOrdering))
                       .toMap
                   )
-
-                // Protocol.SelfUpMsg(immutable.SortedSet.from(m.currentClusterState.members)(Member.ageOrdering))
               },
               classOf[SelfUp],
             )
@@ -77,6 +72,9 @@ object Guardian {
             import org.apache.pekko.cluster.*
 
             cluster.subscriptions ! Unsubscribe(ctx.self)
+
+            val chatDC = sys.settings.config.getString("safer-chat.dc.chat")
+            val sessionDC = sys.settings.config.getString("safer-chat.dc.session")
 
             val membersByAge = membersByAgeDc(cluster.selfMember.dataCenter)
             membersByAge.headOption.foreach { shardCoordinator =>
@@ -90,7 +88,7 @@ object Guardian {
                 s"Cores:${rntm.availableProcessors()} Memory:[Total=${rntm.totalMemory() / 1000000}Mb, Max=${rntm
                     .maxMemory() / 1000000}Mb, Free=${rntm.freeMemory() / 1000000}Mb, RAM=${totalMemory / 1000000} ]"
 
-              val isUpd = if (cluster.selfMember.appVersion.compareTo(shardCoordinator.appVersion) > 0) "✅" else "❌"
+              val isUpd = if cluster.selfMember.appVersion.compareTo(shardCoordinator.appVersion) > 0 then "✅" else "❌"
 
               ctx
                 .log
@@ -116,7 +114,7 @@ object Guardian {
                       .mkString("\n")}
                      |Args:${ManagementFactory.getRuntimeMXBean().getInputArguments()}
                      |★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★ ★
-                     |👍✅🚀🧪❌😄📣🔥🐳🚨😱🥳💰⚡️🚨😱🥳
+                     |👍✅🚀🧪❌😄📣🔥🐳🚨😱🥳💰⚡️🚨😱🥳 (🐳 + 🤖 = 🚀)
                      |🚶(leave) 🙄(roll eyes) 🔫 ("say that again, I double dare you") 👩‍💻😇
                      |---------------------------------------------------------------------------------
                      |""".stripMargin
@@ -140,13 +138,14 @@ object Guardian {
             val oldAllocationStrategy = new org.apache.pekko.cluster.sharding.ShardCoordinator.LeastShardAllocationStrategy(32, 1)
              */
 
+            val numberOfShards = sys.settings.config.getInt("pekko.cluster.sharding.number-of-shards")
             val allocationStrategy = new LeastShardAllocationStrategyWithLogger(8, 1)
 
             // to keep chat and chatSession actor on the same node
             // val allocationStrategy = new org.apache.pekko.cluster.sharding.ConsistentAllocation(2)
             // val allocationStrategy = new LeastShardNoRebalancingAllocationStrategy(logger)
 
-            // on session-DC it's valid shardRegion, on chat-DC it acts as shardProxy
+            // on session-DC it's a valid shardRegion, on chat-DC it acts as a shard proxy
             val chatRoomSessionRegionOrProxy: ActorRef[ChatRoomCmd] =
               sharding.init(
                 Entity(ChatRoomSession.TypeKey) { entityCtx =>
@@ -158,31 +157,31 @@ object Guardian {
                         ClusterShardingSettings
                           .PassivationStrategySettings
                           .defaults
-                          // .withActiveEntityLimit(256) TODO:
+                          // .withActiveEntityLimit(256)
                           // .withIdleEntityPassivation(30.seconds)
                       )
                   )
                   .withDataCenter(sessionDC)
-                  .withMessageExtractor(ChatRoomSession.shardingMessageExtractor())
+                  .withMessageExtractor(ChatRoomSession.shardingMessageExtractor(numberOfShards))
                   .withAllocationStrategy(allocationStrategy)
               )
 
-            if (cluster.selfMember.dataCenter == chatDC) {
+            if cluster.selfMember.dataCenter == chatDC then {
 
-              // on chat-DC it's valid shardRegion, on sessionDC it acts as shardProxy
-              val chatRoomRegionOrProxy: ActorRef[ChatCmd] =
+              val chatRoomRegion: ActorRef[ChatCmd] =
                 sharding.init(
                   Entity(ChatRoom.TypeKey)(entityCtx => ChatRoom(ChatName(entityCtx.entityId), appCfg, 30.seconds))
                     // .withDataCenter(chatDC)
-                    .withMessageExtractor(ChatRoom.shardingMessageExtractor())
+                    .withMessageExtractor(ChatRoom.shardingMessageExtractor(numberOfShards))
                     .withAllocationStrategy(allocationStrategy)
                 )
 
               val grpcService: HttpRequest => Future[HttpResponse] =
                 ServiceHandler.concatOrNotFound(
-                  ChatRoomHandler.partial(new ChatRoomApi(appCfg, chatRoomRegionOrProxy)),
+                  ChatRoomHandler.partial(new ChatRoomApi(appCfg, chatRoomRegion)),
+                  // TODO: move ChatRoomSessionApi.post to ChatRoomApi and delete ChatRoomSessionApi
                   ChatRoomSessionHandler.partial(
-                    new ChatRoomSessionApi(appCfg, chatRoomRegionOrProxy, chatRoomSessionRegionOrProxy, kss)
+                    new ChatRoomSessionApi(appCfg, chatRoomRegion, chatRoomSessionRegionOrProxy, kss)
                   ),
                   ServerReflection.partial(List(server.grpc.admin.ChatRoom, server.grpc.chat.ChatRoomSession)),
                 )

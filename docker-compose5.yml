@@ -2,13 +2,14 @@ version: '3.9'
 
 services:
   cassandra:
-    image: cassandra:5.0.0
+    image: cassandra:5.0.5
+    #image: cassandra:5.0.4
     hostname: cassandra-local
     container_name: cassandra
     healthcheck:
       test: [ "CMD-SHELL", "nc -z localhost 9042" ]
-    mem_limit: 1600m
-    mem_reservation: 1400Mb
+    mem_limit: 2000m
+    mem_reservation: 1800Mb
     environment:
       CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
       CASSANDRA_DC: "dc1"
@@ -23,13 +24,13 @@ services:
     ports:
       - "9042:9042"
 
-  jaeger:
-    image: jaegertracing/all-in-one:1.55
-    ports:
-      - "16686:16686"
-      - "4317:4317"
-      - "4318:4318"
-    environment:
-      - LOG_LEVEL=debug
+  #jaeger:
+  #  image: jaegertracing/all-in-one:1.55
+  #  ports:
+  #    - "16686:16686"
+  #    - "4317:4317"
+  #    - "4318:4318"
+  #  environment:
+  #    - LOG_LEVEL=debug
 
   #http://127.0.0.1:16686/

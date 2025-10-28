@@ -6,8 +6,11 @@ package org.apache.pekko.cassandra
 
 import org.apache.pekko.actor.*
 import com.datastax.oss.driver.api.core.*
+import com.codahale.metrics.MetricRegistry
 
 object CassandraSessionExtension extends ExtensionId[CassandraSessionExtension] with ExtensionIdProvider {
+
+  val cntName = "num-of-reqs"
 
   override def get(system: ActorSystem): CassandraSessionExtension = super.get(system)
 
@@ -25,22 +28,30 @@ class CassandraSessionExtension(system: ActorSystem) extends Extension {
   val astraUrl = classOf[CassandraSessionExtension.type].getResource("/astra/schat-cloud.zip")
 
   // https://docs.datastax.com/en/developer/java-driver/4.17/manual/core/
-  lazy val cqlSession = {
-    val metricRegistry = new com.codahale.metrics.MetricRegistry()
+  lazy val (cqlSession, metricRegistry) = {
+    // lazy val cqlSession = {
+    // TODO: https://github.com/kbr-/scylla-example-app/blob/main/src/main/java/app/Main.java
+    /// Users/vadimbondarev/projects/kafka_projects/scala-kafka-avro/src/main/scala/com/app/ConsumerApp.scala
+
+    val metricRegistry = new MetricRegistry()
+    // val cnt = metricRegistry.counter(cntName)
+    // metricRegistry.getMetrics().keySet().size())
 
     val session = CqlSession
       .builder()
       .withCloudSecureConnectBundle(astraUrl)
+      // .withTimestampGenerator(new AtomicMonotonicTimestampGenerator())
       .withAuthCredentials(
         system.settings.config.getString("cassandra.username"),
         system.settings.config.getString("cassandra.psw"),
       )
       .withKeyspace(CqlIdentifier.fromCql(keyspace))
       .withMetricRegistry(metricRegistry)
-      // .addRequestTracker(new RequestLogger())
+      // .addRequestTracker(new RequestLogger() {})
       .build()
 
     session.execute(s"USE $keyspace")
-    session
+    (session, metricRegistry)
+    // session
   }
 }

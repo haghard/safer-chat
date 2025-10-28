@@ -2,9 +2,19 @@ syntax = "proto3";
 
 import "scalapb/scalapb.proto";
 
+package com.domain.chat.cdc.v1;
+
 import "api/v1/chatroomSession.proto";
 
-package com.domain.chat.cdc.v1;
+option (scalapb.options) = {
+  scope: PACKAGE
+  flat_package: true
+  lenses: true
+  enum_value_naming: CAMEL_CASE
+  enum_strip_prefix: true
+  preserve_unknown_fields: false
+  scala3_sources: true
+};
 
 message CdcEnvelope {
 

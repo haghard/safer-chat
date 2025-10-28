@@ -23,6 +23,7 @@ import scala.jdk.FutureConverters.CompletionStageOps
 import scala.util.control.NonFatal
 import scala.collection.immutable.HashSet
 import CassandraStore.*
+import com.codahale.metrics.Counter
 import server.grpc.ChatRoom
 
 object ChatRoomExtension extends ExtensionId[ChatRoomExtension] with ExtensionIdProvider {
@@ -47,11 +48,14 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
 
   given refResolver: ActorRefResolver = ActorRefResolver(system0)
 
-  given cqlSession: CqlSession = CassandraSessionExtension(system).cqlSession
+  val casExt = CassandraSessionExtension(system)
+  given cqlSession: CqlSession = casExt.cqlSession
+
+  val cntr: Counter = casExt.metricRegistry.counter(CassandraSessionExtension.cntName)
 
   private val parallelism = system.settings.config.getInt("cassandra.parallelism")
   private val maxBatchSize = system.settings.config.getInt("cassandra.max-batch-size")
-  private val cDetails = Cluster(system).selfMember.details3()
+  private val clusterMemberDetails = Cluster(system).selfMember.clusterMemberDetails()
 
   val getChatDetails =
     cqlSession.prepare(
@@ -70,13 +74,13 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
     )
 
   val writeChatStateQueue =
-    writeQueueImpl(cDetails)
+    writeQueueImpl(clusterMemberDetails, cntr)
 
   val readChatStateQueue =
-    readChatStateQueueImpl(getChatDetails, cDetails)
+    readChatStateQueueImpl(getChatDetails, clusterMemberDetails)
 
   val readResentHistoryQueue =
-    readChatRecentHistoryImpl(getRecent, cDetails)
+    readChatRecentHistoryImpl(getRecent, clusterMemberDetails)
 
   private def getRecentHistory(
       cmd: ServerCmd,
@@ -96,7 +100,7 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
         var mostRecentMsgs = List.empty[ServerCmd]
         val sb = new StringBuilder()
         val iter = asyncResultSet.currentPage().iterator()
-        while (iter.hasNext) {
+        while iter.hasNext do {
           val row = iter.next()
           val timeuud = row.getUuid(1)
           val ts = unixTimestamp(timeuud)
@@ -112,7 +116,7 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
              |${sb.toString()}
              |""".stripMargin)
         mostRecentMsgs
-      }(ExecutionContext.parasitic)
+      }(using ExecutionContext.parasitic)
   }
 
   private def readChatRecentHistoryImpl(
@@ -127,7 +131,7 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
       }
       .mapAsyncUnordered(parallelism) { (cmd, p) =>
         val f = getRecentHistory(cmd, stmt)
-        f.onComplete(p.tryComplete(_))(ExecutionContext.parasitic)
+        f.onComplete(p.tryComplete(_))(using ExecutionContext.parasitic)
         f
       }
       .addAttributes(
@@ -178,7 +182,7 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
               }
             }
 
-        f.onComplete(p.tryComplete(_))(ExecutionContext.parasitic)
+        f.onComplete(p.tryComplete(_))(using ExecutionContext.parasitic)
         f
       }
       .addAttributes(
@@ -203,7 +207,7 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
         throw new Exception(s"Unsupported partition")
     }
 
-  private def writeQueueImpl(clusterMemberDetails: String): BoundedSourceQueue[WriteOp] = {
+  private def writeQueueImpl(clusterMemberDetails: String, cntr: Counter): BoundedSourceQueue[WriteOp] = {
     val stmt: PreparedStatement =
       cqlSession.prepare(
         SimpleStatement
@@ -218,7 +222,7 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
         .mapAsyncPartitioned(parallelism)(extractPartition) { (out: WriteOp, _: ChatName) =>
           val (revision, cdc) = out
           // TODO: error handling
-          updateChatRoom(revision, cdc, stmt)
+          updateChatRoom(revision, cdc, stmt, cntr)
         }
         .addAttributes(
           ActorAttributes.supervisionStrategy {
@@ -242,6 +246,7 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
       revision: Long,
       chatDetailsAction: CdcEnvelopeMessage.SealedValue,
       ps: PreparedStatement,
+      cntr: Counter,
     )(using
       resolver: ActorRefResolver,
       session: CqlSession,
@@ -253,6 +258,7 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
           .asScala
           .map { _ =>
             ReplyTo[ChatReply].toBase(cdc.replyTo).tell(ChatReply(cdc.chat))
+            cntr.inc()
             Done
           }
       case CdcEnvelopeMessage.SealedValue.AddedV2(cdc) =>
@@ -263,6 +269,7 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
           .asScala
           .map { _ =>
             ReplyTo[ChatReply].toBase(cdc.replyTo).tell(ChatReply(cdc.chat))
+            cntr.inc()
             Done
           }
       case CdcEnvelopeMessage.SealedValue.Empty =>

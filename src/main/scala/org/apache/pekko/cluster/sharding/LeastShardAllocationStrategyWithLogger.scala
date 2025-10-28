@@ -46,7 +46,7 @@ final class LeastShardAllocationStrategyWithLogger(
     val current =
       currentShardAllocations
         .map { (ar, shards) =>
-          val addrStr = if (ar.path.address.hasLocalScope) cluster.selfMember.address else ar.path.address
+          val addrStr = if ar.path.address.hasLocalScope then cluster.selfMember.address else ar.path.address
           s"""$addrStr=[${shards.mkString(",")}]"""
         }
         .mkString(", ")
@@ -54,12 +54,10 @@ final class LeastShardAllocationStrategyWithLogger(
     system
       .log
       .warn(s"""
-        |-----------------------------
-        |Rebalance:
-        |Current: $current
-        |InProgress: ${rebalanceInProgress.mkString(",")}
-        |-----------------------------
-        |""".stripMargin)
+           |-----------------------------
+           |Rebalance: Current:[$current] / InProgress: [${rebalanceInProgress.mkString(",")}]
+           |-----------------------------
+           |""".stripMargin)
 
     delegate.rebalance(currentShardAllocations, rebalanceInProgress)
   }

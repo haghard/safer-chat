@@ -16,7 +16,7 @@ class DynamicLeastShardAllocationStrategy(
     rebalanceNumber: Int,
     rebalanceFactor: Double)
     extends ShardAllocationStrategy
-    with Serializable {
+       with Serializable {
 
   def this(rebalanceThreshold: Int, maxSimultaneousRebalance: Int) =
     this(rebalanceThreshold, maxSimultaneousRebalance, rebalanceThreshold, 0.0)
@@ -34,7 +34,7 @@ class DynamicLeastShardAllocationStrategy(
       currentShardAllocations: Map[ActorRef, immutable.IndexedSeq[ShardId]],
       rebalanceInProgress: Set[ShardId],
     ): Future[Set[ShardId]] =
-    if (rebalanceInProgress.size < maxSimultaneousRebalance) {
+    if rebalanceInProgress.size < maxSimultaneousRebalance then {
       val (_, leastShards) = currentShardAllocations.minBy { case (_, v) => v.size }
       val mostShards = currentShardAllocations
         .collect {
@@ -42,7 +42,7 @@ class DynamicLeastShardAllocationStrategy(
         }
         .maxBy(_.size)
       val difference = mostShards.size - leastShards.size
-      if (difference > rebalanceThreshold) {
+      if difference > rebalanceThreshold then {
 
         val factoredRebalanceLimit = (rebalanceFactor, rebalanceNumber) match {
           // This condition is to maintain semantic backwards compatibility, from when rebalanceThreshold was also
@@ -59,8 +59,7 @@ class DynamicLeastShardAllocationStrategy(
         val n =
           math.min(math.min(factoredRebalanceLimit, evenRebalance), maxSimultaneousRebalance - rebalanceInProgress.size)
         Future.successful(mostShards.sorted.take(n).toSet)
-      } else
-        emptyRebalanceResult
+      } else emptyRebalanceResult
     } else emptyRebalanceResult
 
   final private val emptyRebalanceResult =

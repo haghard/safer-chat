@@ -61,7 +61,7 @@ object Handle {
 
   private def toBigEndianBytes(bi: BigInt): Array[Byte] = {
     val bs = bi.toByteArray
-    if (bs.length > 1 && bs.head == 0.toByte) bs.tail else bs
+    if bs.length > 1 && bs.head == 0.toByte then bs.tail else bs
   }
 
   def ofModulus(n: BigInt): Handle =
@@ -99,7 +99,8 @@ object ChatUser {
     for {
       str <- Try(s.mkString).toOption
       a <- parse(str.parseJson(settings).convertTo[ChatUserSnapshot]).toOption
-    } yield a
+    }
+    yield a
 
   private def parse(a: ChatUserSnapshot): Try[ChatUser] = Try {
     val kf = KeyFactory.getInstance(ALG)

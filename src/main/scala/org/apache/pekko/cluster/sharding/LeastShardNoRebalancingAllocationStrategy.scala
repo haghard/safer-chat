@@ -33,7 +33,7 @@ final class LeastShardNoRebalancingAllocationStrategy(log: Logger) extends Abstr
       val regionInd = (seqNum.getAndIncrement() % regions.size).toInt
       val candidate = Vector.from(sortedRegions)(regionInd)
 
-      val addrStr = if (candidate.path.address.hasLocalScope) selfMember.address else candidate.path.address
+      val addrStr = if candidate.path.address.hasLocalScope then selfMember.address else candidate.path.address
       println(s"★ ★ ★ AllocateShard($shardId) on $addrStr)")
       candidate
     }
@@ -43,7 +43,7 @@ final class LeastShardNoRebalancingAllocationStrategy(log: Logger) extends Abstr
       val regionEntries = regionEntriesFor(currentShardAllocations)
       // prefer the node with the least allocated shards
       val (region, _) = mostSuitableRegion(regionEntries)
-      val addrStr = if (region.path.address.hasLocalScope) selfMember.address else region.path.address
+      val addrStr = if region.path.address.hasLocalScope then selfMember.address else region.path.address
       log.warn(s"★ ★ ★ AllocateShard($shardId) on ${addrStr}")
       region
     }
@@ -54,7 +54,7 @@ final class LeastShardNoRebalancingAllocationStrategy(log: Logger) extends Abstr
       currentShardAllocations: AllocationMap,
     ): Future[ActorRef] =
     Future.successful {
-      val requesterAddr = if (requester.path.address.hasLocalScope) selfMember.address else requester.path.address
+      val requesterAddr = if requester.path.address.hasLocalScope then selfMember.address else requester.path.address
       log.info(s"★ ★ ★ AllocateShard($shardId) on $requesterAddr")
       requester
     }

@@ -5,7 +5,7 @@
 package server
 package grpc
 
-import scala.concurrent.duration.{ DurationInt, FiniteDuration }
+import scala.concurrent.duration.*
 import com.domain.chat.*
 
 import java.nio.charset.*
@@ -16,9 +16,8 @@ import org.apache.pekko.actor.typed.*
 import org.apache.pekko.actor.typed.scaladsl.*
 import org.apache.pekko.cluster.sharding.typed.scaladsl.*
 import org.apache.pekko.persistence.typed.state.scaladsl.*
-import shared.Domain.{ ChatName, ReplyTo }
+import shared.Domain.*
 
-import java.nio.ByteBuffer
 import cluster.sharding.typed.ShardingMessageExtractor
 
 object ChatRoom {
@@ -27,15 +26,16 @@ object ChatRoom {
 
   val TypeKey = EntityTypeKey[ChatCmd]("chatroom")
 
+  /*
   def hexId2Long(hexId: String): Long =
     java.lang.Long.parseUnsignedLong(hexId, 16)
 
   def hashCmd(line: String): Long = {
-    val bts = ByteBuffer.wrap(line.getBytes(StandardCharsets.UTF_8))
+    val bts = java.nio.ByteBuffer.wrap(line.getBytes(StandardCharsets.UTF_8))
     org.apache.pekko.cassandra.CassandraHash.hash(bts, 0, bts.array.length)
-  }
+  }*/
 
-  def shardingMessageExtractor2(numOfShards: Int): ShardingMessageExtractor[ChatCmd, ChatCmd] =
+  /*def shardingMessageExtractor2(numOfShards: Int): ShardingMessageExtractor[ChatCmd, ChatCmd] =
     new ShardingMessageExtractor[ChatCmd, ChatCmd] {
       override def entityId(cmd: ChatCmd): String =
         hashCmd(cmd.chat.raw()).toHexString
@@ -45,15 +45,15 @@ object ChatRoom {
       // math.abs(hexId2Long(entityId) % numOfShards).toString
 
       override def unwrapMessage(cmd: ChatCmd): ChatCmd = cmd
-    }
+    }*/
 
-  def shardingMessageExtractor(): ShardingMessageExtractor[ChatCmd, ChatCmd] =
+  def shardingMessageExtractor(numberOfShards: Int): ShardingMessageExtractor[ChatCmd, ChatCmd] =
     new ShardingMessageExtractor[ChatCmd, ChatCmd] {
       override def entityId(cmd: ChatCmd): String =
         cmd.chat.raw()
 
       override def shardId(entityId: String): String =
-        entityId
+        math.abs(entityId.hashCode % numberOfShards).toString
 
       override def unwrapMessage(cmd: ChatCmd): ChatCmd = cmd
     }
@@ -71,8 +71,6 @@ object ChatRoom {
       given sys: ActorSystem[?] = ctx.system
 
       given chatRoom: ActorContext[ChatCmd] = ctx
-
-      given sharding: ClusterSharding = ClusterSharding(sys)
 
       Behaviors.withTimers { t =>
         t.startSingleTimer(chatId, StopChatEntity(chatId), passivatonTo)
@@ -100,7 +98,6 @@ object ChatRoom {
       resolver: actor.typed.ActorRefResolver,
       strRefResolvers: stream.StreamRefResolver,
       ctx: ActorContext[ChatCmd],
-      sharding: ClusterSharding,
     ): (ChatState, ChatCmd) => Effect[ChatState] = { (state, cmd) =>
     given ec: scala.concurrent.ExecutionContext = sys.executionContext
     val logger: org.slf4j.Logger = sys.log
@@ -132,8 +129,8 @@ object ChatRoom {
             val rps = state.registeredParticipants
             logger.info(s"Registered-participants:[${rps.mkString(",")}]")
 
-            // TODO: limit number of participants
-            if (state.registeredParticipants.contains(user)) {
+            // TODO: limit the number of participants
+            if state.registeredParticipants.contains(user) then {
               Effect
                 .none[ChatState]
                 .thenRun(_ => logger.info("{} already registered", user.raw()))
@@ -160,7 +157,7 @@ object ChatRoom {
 
         state.name match {
           case Some(chatName) =>
-            if (state.registeredParticipants.contains(user)) {
+            if state.registeredParticipants.contains(user) then {
               // if (state.onlineParticipants.contains(user)) Effect.reply(replyTo0)(ChatReply(chat, ChatReply.StatusCode.AlreadyConnected))
               // else {
               import com.bastiaanjansen.otp.*
@@ -174,7 +171,7 @@ object ChatRoom {
                   .withPeriod(java.time.Duration.ofSeconds(10))
                   .build()
               }
-              if (maybeOtp.map(_.verify(otp.raw())).getOrElse(false)) {
+              if maybeOtp.map(_.verify(otp.raw())).getOrElse(false) then {
                 Effect
                   .reply(replyTo0)(
                     ChatReply(chat, statusCode = ChatReply.StatusCode.Ok)
