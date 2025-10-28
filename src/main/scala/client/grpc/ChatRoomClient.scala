@@ -239,11 +239,10 @@ object ChatRoomClient {
     }
 
     val doneF =
-      for {
+      for
         _ <- crClient.addChat(ChatReq(chatName))
         _ <- crClient.addUser(UserReq(chatName, Participant(chatUsr.handle.toString)))
         done <- postMessages(chatUsr, defaultUsr, appConf, userName, userPubKeys)
-      }
       yield done
 
     doneF.onComplete { code =>
