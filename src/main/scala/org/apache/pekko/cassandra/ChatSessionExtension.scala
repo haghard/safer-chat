@@ -1,3 +1,7 @@
+// Copyright (c) 2024-26 by Vadim Bondarev
+// This software is licensed under the Apache License, Version 2.0.
+// You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0.
+
 package org.apache.pekko.cassandra
 
 import com.datastax.oss.driver.api.core.CqlSession
@@ -208,7 +212,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
 
     // keeps consuming from the receive-buffer and aggregate state in memory
     MergeHub
-      .source[ServerCmd](perProducerBufferSize = 1) // TODO: MergeHub -> head-of-line blocking ???
+      .source[ServerCmd](perProducerBufferSize = 1) // TODO: MergeHub -> Head-of-line (HOL) blocking ???
       // .log("cassandra-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}")(logger)
       .buffer(maxBatchSize, OverflowStrategy.backpressure)
       .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))

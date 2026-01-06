@@ -1,4 +1,4 @@
-// Copyright (c) 2024 by Vadim Bondarev
+// Copyright (c) 2024-26 by Vadim Bondarev
 // This software is licensed under the Apache License, Version 2.0.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0.
 
@@ -239,10 +239,11 @@ object ChatRoomClient {
     }
 
     val doneF =
-      for
+      for {
         _ <- crClient.addChat(ChatReq(chatName))
         _ <- crClient.addUser(UserReq(chatName, Participant(chatUsr.handle.toString)))
         done <- postMessages(chatUsr, defaultUsr, appConf, userName, userPubKeys)
+      }
       yield done
 
     doneF.onComplete { code =>

@@ -1,13 +1,13 @@
-//https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.2.html
-
 //https://github.com/scala/scala3/releases/tag/3.3.7
 //val scala3Version = "3.3.7"
 
-//https://www.scala-lang.org/news/3.7.3
-val scala3Version = "3.7.3"
+
+//https://www.scala-lang.org/news/3.7.4
+val scala3Version = "3.7.4"
 
 //https://github.com/apache/pekko/tags
-val pekkoV = "1.2.1"
+//https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.4.html
+val pekkoV = "1.4.0"
 
 val logbackVersion = "1.5.20"
 val slf4jVersion = "2.0.17"
@@ -16,10 +16,13 @@ val slf4jVersion = "2.0.17"
 val pekkoHttpV = "1.3.0"
 
 //https://github.com/apache/pekko-management/tags
-val PekkoManagementVersion = "1.1.1"
+val PekkoManagementVersion = "1.2.0"
 
 val ProjectName = "safer-chat"
-val AmmoniteVersion = "3.0.3"
+
+//https://mvnrepository.com/artifact/com.lihaoyi/ammonite
+//https://github.com/com-lihaoyi/Ammonite/releases
+val AmmoniteVersion = "3.0.5"
 
 val jvmVersion = "17"
 
@@ -93,7 +96,7 @@ lazy val root = project
     headerMappings := headerMappings.value + (HeaderFileType.scala -> HeaderCommentStyle.cppStyleLineComment),
     headerLicense := Some(
       HeaderLicense.Custom(
-        """|Copyright (c) 2024-25 by Vadim Bondarev
+        """|Copyright (c) 2024-26 by Vadim Bondarev
            |This software is licensed under the Apache License, Version 2.0.
            |You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0.
            |""".stripMargin
@@ -127,16 +130,15 @@ lazy val root = project
       "org.slf4j" % "slf4j-api" % slf4jVersion,
 
       "com.madgag.spongycastle" % "core" % "1.58.0.0",
-      "org.bouncycastle" % "bcpkix-jdk18on" % "1.82",
+      "org.bouncycastle" % "bcpkix-jdk18on" % "1.83",
 
       "io.aeron" % "aeron-driver" % "1.46.6", //is jdk17 only
       "io.aeron" % "aeron-client" % "1.46.6",
 
-      "org.wvlet.airframe" %% "airframe-ulid" % "2025.1.21",
+      "org.wvlet.airframe" %% "airframe-ulid" % "2025.1.22",
       "com.github.bastiaanjansen" % "otp-java" % "2.1.0",
       "com.datastax.oss" % "java-driver-core" % "4.17.0",
-
-      "org.creativescala" %%% "terminus-core" % "0.4.0",
+      
 
       ("com.lihaoyi" % "ammonite" % AmmoniteVersion % "test" cross CrossVersion.full)
         .exclude("com.thesamet.scalapb", "lenses_2.13")
@@ -320,9 +322,9 @@ val unnamedJavaOptions = List(
 )
 
 
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC -jar ./target/scala-3.7.3/safer-chat-0.1.3.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC -jar ./target/scala-3.7.4/safer-chat-0.1.3.jar
 
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 -Dpekko.cluster.multi-data-center.self-data-center=session-DC ./target/scala-3.7.3/safer-chat-0.1.3.jar
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.3 -Dpekko.management.http.hostname=127.0.0.3 -Dpekko.cluster.multi-data-center.self-data-center=session-DC ./target/scala-3.7.3/safer-chat-0.1.3.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 -Dpekko.cluster.multi-data-center.self-data-center=session-DC ./target/scala-3.7.4/safer-chat-0.1.3.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.3 -Dpekko.management.http.hostname=127.0.0.3 -Dpekko.cluster.multi-data-center.self-data-center=session-DC ./target/scala-3.7.4/safer-chat-0.1.3.jar
 //show dependencyList
 
