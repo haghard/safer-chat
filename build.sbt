@@ -3,13 +3,16 @@
 
 
 //https://www.scala-lang.org/news/3.7.4
-val scala3Version = "3.7.4"
+//https://docs.scala-lang.org/getting-started/install-scala.html
+//https://www.scala-lang.org/news/3.8.1
+//https://www.scala-lang.org/news/3.8.2
+val scala3Version = "3.8.2" //"3.7.4"
 
 //https://github.com/apache/pekko/tags
 //https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.4.html
 val pekkoV = "1.4.0"
 
-val logbackVersion = "1.5.20"
+val logbackVersion = "1.5.32"
 val slf4jVersion = "2.0.17"
 
 //https://github.com/apache/pekko-http/tags
@@ -22,7 +25,7 @@ val ProjectName = "safer-chat"
 
 //https://mvnrepository.com/artifact/com.lihaoyi/ammonite
 //https://github.com/com-lihaoyi/Ammonite/releases
-val AmmoniteVersion = "3.0.5"
+val AmmoniteVersion = "3.0.8"
 
 val jvmVersion = "17"
 
@@ -55,7 +58,8 @@ lazy val scalac3Settings = Seq(
     "-Wconf:msg=is deprecated for wildcard arguments of types:silent",
     "-Wconf:msg=qualifier will be deprecated in the future; it should be dropped:silent",
 
-    "-Xfatal-warnings",
+    //"-Xfatal-warnings", //works on "3.7.4", but on 3.8.x I get "Option -Xfatal-warnings is a deprecated alias: use -Werror instead"
+    "-Werror",
 
     //https://github.com/hearnadam/kyo-workshop/blob/master/build.sbt
     //"-Wconf:msg=(discarded.*value|pure.*statement):error",
@@ -135,15 +139,49 @@ lazy val root = project
       "io.aeron" % "aeron-driver" % "1.46.6", //is jdk17 only
       "io.aeron" % "aeron-client" % "1.46.6",
 
-      "org.wvlet.airframe" %% "airframe-ulid" % "2025.1.22",
+      "org.wvlet.airframe" %% "airframe-ulid" % "2026.1.4",
       "com.github.bastiaanjansen" % "otp-java" % "2.1.0",
       "com.datastax.oss" % "java-driver-core" % "4.17.0",
-      
 
-      ("com.lihaoyi" % "ammonite" % AmmoniteVersion % "test" cross CrossVersion.full)
+      //https://github.com/f4b6a3/uuid-creator
+      //TODO: https://github.com/openmole/miniclust/blob/main/build.sbt
+      //"com.github.f4b6a3" % "uuid-creator" % "6.1.1",
+
+      //https://tarao.orezdnu.org/record4s/
+      //"com.github.tarao" %% "record4s" % "0.13.0",
+
+      //https://index.scala-lang.org/jd557/qrgen?s=03
+      //QRgen
+      //"eu.joaocosta" %% "qrgen" % "0.1.0",
+
+      //CLI to gen keys
+      //"tech.neander" %% "cue4s" % "0.0.9",
+
+      //https://www.creativescala.org/terminus/
+      //https://github.com/creativescala/terminus.git
+      //https://github.com/mattlianje/layoutz
+      "org.creativescala" %%% "terminus-core" % "0.4.0",
+
+      //https://github.com/lightbend-labs/lightbend-emoji
+      //  Key: ✔️ = Good, ⚠️ = Sub-optimal, ⛔ = Bad, 💀 = Horrible
+      "com.lightbend" %% "emoji" % "1.3.0",
+
+      //https://habr.com/ru/articles/936458/
+      //"com.github.fzakaria" % "ascii85" % "1.2",
+
+      //https://github.com/scalag/scalag/blob/master/build.sbt
+      //https://github.com/dialex/JColor
+      //https://github.com/ComputeNode/scalag/blob/master/build.sbt
+      //"com.lihaoyi" % "pprint_3" % "0.9.0",
+      //"com.diogonunes" % "JColor" % "5.5.1",
+
+
+
+
+      /*("com.lihaoyi" % "ammonite" % AmmoniteVersion % "test" cross CrossVersion.full)
         .exclude("com.thesamet.scalapb", "lenses_2.13")
         .exclude("com.thesamet.scalapb", "scalapb-runtime_2.13")
-        .exclude("org.slf4j", "slf4j-api"),
+        .exclude("org.slf4j", "slf4j-api"),*/
     ),
 
     dependencyOverrides ++= Seq(
