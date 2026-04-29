@@ -9,7 +9,6 @@ import com.datastax.oss.driver.api.core.CqlSession
 
 import scala.concurrent.*
 import scala.concurrent.duration.*
-import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.Logger
 import org.apache.pekko.*
 import org.apache.pekko.actor.typed.*
@@ -19,7 +18,7 @@ import com.domain.chat.ChatReply.StatusCode
 import com.domain.chat.*
 import com.domain.chatRoom.*
 import org.apache.pekko.actor.typed.ActorRefResolver
-import org.apache.pekko.actor.typed.scaladsl.AskPattern.{ Askable, schedulerFromActorSystem }
+import org.apache.pekko.actor.typed.scaladsl.AskPattern.*
 import org.apache.pekko.cassandra.{ ChatRoomExtension, ExpiringPromise }
 import org.apache.pekko.cassandra.CassandraSessionExtension
 import server.grpc.api.ChatRoomSessionApi.ChatError
@@ -38,7 +37,6 @@ final class ChatRoomSessionApi(
     appConf: AppConfig,
     chatRoomRegion: ActorRef[ChatCmd],
     chatRoomSessionRegion: ActorRef[ChatRoomCmd],
-    kss: ConcurrentHashMap[ChatName, KillSwitch],
   )(using system: ActorSystem[?])
     extends server.grpc.chat.ChatRoomSession {
 
@@ -58,15 +56,14 @@ final class ChatRoomSessionApi(
           .lazyFutureSource { () =>
             val user = authMsg.userInfo.user
             auth(chatRoomRegion, authMsg.chat, user, authMsg.otp, source).map { authSrc =>
-              authSrc.via(flow(chatRoomRegion, authMsg, user))
+              authSrc.via(postFlow(authMsg, user))
             }
           }
       case _ =>
         Source.empty
     }
 
-  private def flow(
-      chatRegion: ActorRef[ChatCmd],
+  def postFlow(
       authMsg: ClientCmd,
       user: Participant,
     ): Flow[ClientCmd, ServerCmd, NotUsed] =
@@ -77,7 +74,7 @@ final class ChatRoomSessionApi(
           .withMaxRestarts(12, 1.minute)
       )(() => Flow.lazyFutureFlow(() => chatRoomFlow(chatRoomSessionRegion, authMsg, user)))
 
-  private def auth(
+  def auth(
       chatRegion: ActorRef[ChatCmd],
       chat: ChatName,
       user: Participant,
@@ -97,7 +94,7 @@ final class ChatRoomSessionApi(
         }
       }
 
-  private def chatRoomFlow(
+  def chatRoomFlow(
       chatRoomSessionRegion: ActorRef[ChatRoomCmd],
       authMsg: ClientCmd,
       user: Participant,

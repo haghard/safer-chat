@@ -22,9 +22,8 @@ class DynamicLeastShardAllocationStrategy(
     extends ShardAllocationStrategy
        with Serializable {
 
-  def this(rebalanceThreshold: Int, maxSimultaneousRebalance: Int) = {
+  def this(rebalanceThreshold: Int, maxSimultaneousRebalance: Int) =
     this(rebalanceThreshold, maxSimultaneousRebalance, rebalanceThreshold, 0.0)
-  }
 
   override def allocateShard(
       requester: ActorRef,

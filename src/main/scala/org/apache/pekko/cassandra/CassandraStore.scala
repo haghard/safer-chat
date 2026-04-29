@@ -142,10 +142,9 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
     new DurableStateUpdateStore[ChatRoom.State]() {
       given typedSystem: ActorSystem[?] = system.toTyped
       given logger: Logger = typedSystem.log
-      given scheduler: org.apache.pekko.actor.Scheduler = system.scheduler
       given cqlSession: CqlSession = CassandraSessionExtension(system).cqlSession
 
-      val to = 3.seconds
+      val readTimeout = 3.seconds
 
       cqlSession.execute(CassandraStore.chatDetailsDDL)
       cqlSession.execute(CassandraStore.chatTimelineDDL)
@@ -186,10 +185,10 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
         insert(state, ChatName(chatName), revision)
 
       override def getObject(chat: String): Future[GetObjectResult[ChatRoom.State]] = {
-        val expP = ExpiringPromise[GetObjectResult[ChatRoom.State]](to)
-        readQueue.offer((chat, expP)).flatMap {
+        val ep = ExpiringPromise[GetObjectResult[ChatRoom.State]](readTimeout)
+        readQueue.offer((chat, ep)).flatMap {
           case QueueOfferResult.Enqueued =>
-            expP.future
+            ep.future
           case QueueOfferResult.Dropped =>
             logger.warn("ChatRoomCassandraStore read-queue overflow. Size={}", writeQueue.size())
             Future.failed(new Exception("Read overflow"))

@@ -19,10 +19,9 @@ import scala.concurrent.Future
 
 final class RestApi(using sys: ActorSystem[?]) extends Directives {
 
-  val bs = 1 << 4
   val ((queue, ks), src) =
     Source
-      .queue[ByteString](bs)
+      .queue[ByteString](1 << 4)
       .viaMat(KillSwitches.single)(Keep.both)
       .toMat(BroadcastHub.sink[ByteString](1))(Keep.both)
       .run()

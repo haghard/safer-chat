@@ -96,10 +96,9 @@ object ChatUser {
     Try(Files.write(Paths.get(filename), chatUser.toString().getBytes(UTF_8)))
 
   def loadFromDisk(s: scala.io.Source): Option[ChatUser] =
-    for {
+    for
       str <- Try(s.mkString).toOption
       a <- parse(str.parseJson(settings).convertTo[ChatUserSnapshot]).toOption
-    }
     yield a
 
   private def parse(a: ChatUserSnapshot): Try[ChatUser] = Try {

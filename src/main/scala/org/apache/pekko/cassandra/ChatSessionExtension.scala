@@ -43,7 +43,6 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
 
   private val profileName = "default"
   private val cDetails = Cluster(system).selfMember.clusterMemberDetails()
-  private val parallelism = system.settings.config.getInt("cassandra.parallelism")
   private val maxBatchSize = system.settings.config.getInt("cassandra.max-batch-size")
 
   given logger: LoggingAdapter = system.log

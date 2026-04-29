@@ -1,0 +1,117 @@
+#https://github.com/kayvansol/Cassandra
+services:
+
+  cassandra-1:
+    image: cassandra:5.0.8
+    container_name: cassandra-1
+    ports:
+      - 9042:9042
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1200M
+    volumes:
+      - ./cassandra-cluster/data1:/var/lib/cassandra:rw
+    networks:
+      - cassandra-net
+    environment:
+      - CASSANDRA_CLUSTER_NAME=my-cluster
+      - CASSANDRA_DC=DC1
+      - CASSANDRA_RACK=Rack1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - MAX_HEAP_SIZE=500M
+      - HEAP_NEWSIZE=200M
+      - CASSANDRA_START_RPC=true
+      - CASSANDRA_RPC_ADDRESS=0.0.0.0
+      - CASSANDRA_LISTEN_ADDRESS=auto
+      #- CASSANDRA_BROADCAST_ADDRESS=cassandra-1 # Use the specific service name for each node
+    healthcheck:
+      test: [ "CMD-SHELL", "nodetool status" ]
+      interval: 2m
+      start_period: 2m
+      timeout: 10s
+      retries: 3
+
+  cassandra-2:
+    image: cassandra:5.0.8
+    container_name: cassandra-2
+    ports:
+      - 9043:9042
+    volumes:
+      - ./cassandra-cluster/data2:/var/lib/cassandra
+    depends_on:
+      cassandra-1:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1200M
+    networks:
+      - cassandra-net
+    environment:
+      - CASSANDRA_CLUSTER_NAME=my-cluster
+      - CASSANDRA_DC=DC1
+      - CASSANDRA_RACK=Rack1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_SEEDS=cassandra-1
+      - MAX_HEAP_SIZE=500M
+      - HEAP_NEWSIZE=200M
+      - CASSANDRA_START_RPC=true
+      - CASSANDRA_LISTEN_ADDRESS=auto
+      - CASSANDRA_RPC_ADDRESS=0.0.0.0
+
+    healthcheck:
+      test: [ "CMD-SHELL", "nodetool status" ]
+      interval: 2m
+      start_period: 2m
+      timeout: 10s
+      retries: 3
+
+
+  cassandra-3:
+    image: cassandra:5.0.8
+    container_name: cassandra-3
+    ports:
+      - 9044:9042
+    volumes:
+      - ./cassandra-cluster/data3:/var/lib/cassandra
+    depends_on:
+      cassandra-2:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1200M
+    networks:
+      - cassandra-net
+    environment:
+      - CASSANDRA_CLUSTER_NAME=my-cluster
+      - CASSANDRA_DC=DC1
+      - CASSANDRA_RACK=Rack1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_SEEDS=cassandra-1
+      - MAX_HEAP_SIZE=500M
+      - HEAP_NEWSIZE=200M
+      - CASSANDRA_START_RPC=true
+      - CASSANDRA_LISTEN_ADDRESS=auto
+      - CASSANDRA_RPC_ADDRESS=0.0.0.0
+
+    healthcheck:
+      test: [ "CMD-SHELL", "nodetool status" ]
+      interval: 2m
+      start_period: 2m
+      timeout: 10s
+      retries: 3
+
+networks:
+  cassandra-net:
+    driver: bridge
+
+#docker restart cassandra-2 cassandra-3
+#docker exec -it cassandra-1 nodetool status
+
+# docker exec -it cassandra-1 cqlsh
+# CREATE KEYSPACE IF NOT EXISTS chat WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 3 };

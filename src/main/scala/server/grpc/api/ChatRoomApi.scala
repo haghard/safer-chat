@@ -12,11 +12,10 @@ import com.domain.chat.request.*
 
 import org.apache.pekko.actor.typed.*
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.Askable
-import shared.AppConfig
 import shared.Domain.*
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.schedulerFromActorSystem
 
-final class ChatRoomApi(appConf: AppConfig, chatRoomRegion: ActorRef[ChatCmd])(using system: ActorSystem[?])
+final class ChatRoomApi(chatRoomRegion: ActorRef[ChatCmd])(using system: ActorSystem[?])
     extends server.grpc.admin.ChatRoom {
 
   given to: org.apache.pekko.util.Timeout = org.apache.pekko.util.Timeout(3.seconds)

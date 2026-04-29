@@ -36,3 +36,6 @@ metals.sbt
 /ks/
 /cassandra-db/data/
 /src/main/resources/astra/*
+
+/cassandra-cluster/*
+

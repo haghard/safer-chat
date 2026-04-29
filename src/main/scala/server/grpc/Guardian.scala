@@ -178,10 +178,10 @@ object Guardian {
 
               val grpcService: HttpRequest => Future[HttpResponse] =
                 ServiceHandler.concatOrNotFound(
-                  ChatRoomHandler.partial(new ChatRoomApi(appCfg, chatRoomRegion)),
+                  ChatRoomHandler.partial(new ChatRoomApi(chatRoomRegion)),
                   // TODO: move ChatRoomSessionApi.post to ChatRoomApi and delete ChatRoomSessionApi
                   ChatRoomSessionHandler.partial(
-                    new ChatRoomSessionApi(appCfg, chatRoomRegion, chatRoomSessionRegionOrProxy, kss)
+                    new ChatRoomSessionApi(appCfg, chatRoomRegion, chatRoomSessionRegionOrProxy)
                   ),
                   ServerReflection.partial(List(server.grpc.admin.ChatRoom, server.grpc.chat.ChatRoomSession)),
                 )

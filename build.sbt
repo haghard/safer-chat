@@ -2,15 +2,15 @@
 //val scala3Version = "3.3.7"
 
 
-//https://www.scala-lang.org/news/3.7.4
 //https://docs.scala-lang.org/getting-started/install-scala.html
+//https://www.scala-lang.org/news/3.7.4
 //https://www.scala-lang.org/news/3.8.1
 //https://www.scala-lang.org/news/3.8.2
-val scala3Version = "3.8.2" //"3.7.4"
+val scala3Version = "3.8.3" //"3.7.4"
 
 //https://github.com/apache/pekko/tags
-//https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.4.html
-val pekkoV = "1.4.0"
+//https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.5.html
+val pekkoV = "1.5.0"
 
 val logbackVersion = "1.5.32"
 val slf4jVersion = "2.0.17"
@@ -19,64 +19,69 @@ val slf4jVersion = "2.0.17"
 val pekkoHttpV = "1.3.0"
 
 //https://github.com/apache/pekko-management/tags
-val PekkoManagementVersion = "1.2.0"
+val PekkoManagementVersion = "1.2.1"
 
 val ProjectName = "safer-chat"
 
-//https://mvnrepository.com/artifact/com.lihaoyi/ammonite
-//https://github.com/com-lihaoyi/Ammonite/releases
-val AmmoniteVersion = "3.0.8"
 
-val jvmVersion = "17"
+//https://github.com/com-lihaoyi/Ammonite/releases
+//https://repo1.maven.org/maven2/com/lihaoyi/ammonite_3.8.1/3.0.9/
+val AmmoniteVersion = "3.0.9"
 
 val AppVersion = "0.2.0"
 
 resolvers ++= Seq("Apache Snapshots" at "https://repository.apache.org/content/repositories/snapshots/")
 
+val requiredJvmVersion = "17"
+
+initialize := {
+  val _ = initialize.value
+  val current  = sys.props("java.specification.version")
+  if (current != requiredJvmVersion)
+    sys.error(s"Java $requiredJvmVersion is required for this project. Found $current instead.")
+}
+
 //show scalacOptions
 //https://docs.scala-lang.org/scala3/guides/migration/options-new.html
-lazy val scalac3Settings = Seq(
+lazy val scalac3Settings = Def.settings(
   scalacOptions ++= Seq(
     "-deprecation",
     "-feature",
     "-language:implicitConversions",
     "-unchecked",
-    //"-Xkind-projector",
     //"-Wsafe-init",
     //"-Yexplicit-nulls",
     "-language:adhocExtensions",
-
-    s"-release:$jvmVersion",
-    //"-java-output-version:17",
+    s"-release:$requiredJvmVersion", //Source compatibility (Language features) and Target compatibility (Bytecode version)
+    //"-Yexplicit-nulls", // Make reference types non-nullable. Nullable types can be expressed with unions: e.g. String|Null.
 
     //https://www.scala-lang.org/blog/2022/04/12/scala-3.1.2-released.html
     //-release is now -java-output-version, and -Xtarget is -Xunchecked-java-output-version.
 
     //https://github.com/apache/pekko-grpc/blob/88e8567e2decbca19642e5454729aa78cce455eb/project/Common.scala#L72
-    "-Wconf:msg=Marked as deprecated in proto file:silent",
+    /*"-Wconf:msg=Marked as deprecated in proto file:silent",
     "-Wconf:msg=pattern selector should be an instance of Matchable:silent",
     "-Wconf:msg=is deprecated for wildcard arguments of types:silent",
-    "-Wconf:msg=qualifier will be deprecated in the future; it should be dropped:silent",
+    "-Wconf:msg=qualifier will be deprecated in the future; it should be dropped:silent",*/
 
     //"-Xfatal-warnings", //works on "3.7.4", but on 3.8.x I get "Option -Xfatal-warnings is a deprecated alias: use -Werror instead"
     "-Werror",
 
-    //https://github.com/hearnadam/kyo-workshop/blob/master/build.sbt
-    //"-Wconf:msg=(discarded.*value|pure.*statement):error",
+    "-Wconf:msg=Implicit parameters should be provided with a `using` clause:s", //silence "Implicit parameters should be provided with a `using` clause."
 
-    // "-Ytasty-reader",
+    //"-Wconf:msg=(discarded.*value|pure.*statement):error",
+    s"-Wconf:src=${(Compile / target).value}/scala-$scala3Version/pekko-grpc/.*:silent",
+
     "-Wunused:imports",
     "-no-indent", //Require classical {…} syntax, indentation is not significant.(forces to use braces)
 
-    //"-rewrite", "-source:3.6-migration",
-    "-rewrite", //When used in conjunction with a ...-migration source version, rewrites sources to migrate to new version.
-    //"-source:3.6-migration",
-    "-source:future-migration",
+    //"-Wunused:imports,params,privates,implicits,explicits,nowarn",
+    //"-Wconf:msg=(discarded non-Unit):silent",
 
-  ) //++ Seq("-rewrite") ++ Seq("-source", "3.6-migration"),
-  //Seq("-rewrite", "-source", "3.5-migration"),
+    //"-rewrite",
+    //"-source:future-migration",
+  ) //++ Seq("-rewrite") ++ Seq("-source", "3.7-migration"),
   //https://docs.scala-lang.org/scala3/guides/migration/tooling-migration-mode.html
-  //https://www.scala-lang.org/development/
 )
 
 lazy val root = project
@@ -166,6 +171,10 @@ lazy val root = project
       //  Key: ✔️ = Good, ⚠️ = Sub-optimal, ⛔ = Bad, 💀 = Horrible
       "com.lightbend" %% "emoji" % "1.3.0",
 
+
+      //https://github.com/edadma/bptree
+      //"io.github.edadma" %% "bptree" % "0.0.3",
+
       //https://habr.com/ru/articles/936458/
       //"com.github.fzakaria" % "ascii85" % "1.2",
 
@@ -174,9 +183,6 @@ lazy val root = project
       //https://github.com/ComputeNode/scalag/blob/master/build.sbt
       //"com.lihaoyi" % "pprint_3" % "0.9.0",
       //"com.diogonunes" % "JColor" % "5.5.1",
-
-
-
 
       /*("com.lihaoyi" % "ammonite" % AmmoniteVersion % "test" cross CrossVersion.full)
         .exclude("com.thesamet.scalapb", "lenses_2.13")
@@ -236,7 +242,6 @@ lazy val root = project
     dockerRepository := Some("haghard"),
     dockerExposedPorts := Seq(8080, 8558, 25520),
     Docker / daemonUser := "root",
-    Docker / mainClass := Some("Main"),
     Docker / daemonUserUid := None,
     buildInfoPackage := "server.grpc",
     buildInfoKeys := Seq[BuildInfoKey](
@@ -247,7 +252,6 @@ lazy val root = project
       "gitBranch" -> SbtUtils.branch.getOrElse(""),
       BuildInfoKey.action("buildTime")(System.currentTimeMillis),
     ),
-    dynverSeparator := "-",
     scalaBinaryVersion := "3", //"2.13"
 
     // make version compatible with docker for publishing
@@ -262,8 +266,9 @@ lazy val root = project
       //"-XX:+PrintGCDetails",
       //"-XshowSettings:vm",
 
-      "-Xms256m",
       "-Xmx256m",
+      "-Xms128m",
+
       "-XX:+AlwaysPreTouch", //
 
       //"-XX:ThreadStackSize=1048576", //[0 ... 1048576]
@@ -278,8 +283,6 @@ lazy val root = project
       // "-XX:+FlightRecorder",
       // "-XX:StartFlightRecording=duration=500s,filename=./flight.jfr",
 
-      //https://softwaremill.com/reactive-event-sourcing-benchmarks-part-2-postgresql/
-      //"-XX:ActiveProcessorCount=4",
 
       // https://dzone.com/articles/troubleshooting-problems-with-native-off-heap-memo
       // To allow getting native memory stats for threads
@@ -302,7 +305,6 @@ lazy val root = project
       //"-XX:MaxRAM=412m",
 
       //https://github.com/kamilkloch/websocket-benchmark/blob/master/build.sbt
-
       /*
       "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED",
       "--add-opens=java.base/java.lang=ALL-UNNAMED",
@@ -312,17 +314,16 @@ lazy val root = project
       */
     ),
 
-    javaHome := Some(file(s"/Library/Java/JavaVirtualMachines/jdk-${jvmVersion}.jdk/Contents/Home/")),
+    //javaHome := Some(file(s"/Library/Java/JavaVirtualMachines/jdk-${requiredJvmVersion}.jdk/Contents/Home/")),
     //javaHome := Some(file("/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home/")),
-    //javaHome := Some(file("/Library/Java/JavaVirtualMachines/jdk-23.jdk/Contents/Home/")),
-    //javaHome := Some(file("/Library/Java/JavaVirtualMachines/jdk-25.jdk/Contents/Home/")),
 
     //https://javaalmanac.io/bytecode/versions/
-    javacOptions ++= Seq("-source", jvmVersion, "-target", jvmVersion),
+    javacOptions ++= Seq("-source", requiredJvmVersion, "-target", requiredJvmVersion),
 
     //comment out if you want to run KeygenApp
     run / fork := true,
     run / connectInput := true,
+    //Global / cancelable := false,
   )
   .enablePlugins(PekkoGrpcPlugin, JavaAppPackaging, BuildInfoPlugin)
 
@@ -360,10 +361,13 @@ val unnamedJavaOptions = List(
   "--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED"
 )
 
-//sbt assembly
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC -jar ./target/scala-3.8.2/safer-chat-0.2.0.jar
+//export JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-17.jdk/Contents/Home
 
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 -Dpekko.cluster.multi-data-center.self-data-center=session-DC ./target/scala-3.8.2/safer-chat-0.2.0.jar
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -jar -Dpekko.remote.artery.canonical.hostname=127.0.0.3 -Dpekko.management.http.hostname=127.0.0.3 -Dpekko.cluster.multi-data-center.self-data-center=session-DC ./target/scala-3.8.2/safer-chat-0.2.0.jar
+//sbt asm
+
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC -Xmx128m -jar ./target/scala-3.8.3/safer-chat-0.2.0.jar
+
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 -Dpekko.cluster.multi-data-center.self-data-center=session-DC -Xmx256m -jar ./target/scala-3.8.3/safer-chat-0.2.0.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.3 -Dpekko.management.http.hostname=127.0.0.3 -Dpekko.cluster.multi-data-center.self-data-center=session-DC -Xmx256m -jar ./target/scala-3.8.3/safer-chat-0.2.0.jar
 //show dependencyList
 

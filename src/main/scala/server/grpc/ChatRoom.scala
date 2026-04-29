@@ -96,8 +96,6 @@ object ChatRoom {
     )(using
       sys: ActorSystem[?],
       resolver: actor.typed.ActorRefResolver,
-      strRefResolvers: stream.StreamRefResolver,
-      ctx: ActorContext[ChatCmd],
     ): (ChatState, ChatCmd) => Effect[ChatState] = { (state, cmd) =>
     given ec: scala.concurrent.ExecutionContext = sys.executionContext
     val logger: org.slf4j.Logger = sys.log

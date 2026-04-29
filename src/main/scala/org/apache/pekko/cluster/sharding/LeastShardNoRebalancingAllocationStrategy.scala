@@ -30,9 +30,9 @@ final class LeastShardNoRebalancingAllocationStrategy(log: Logger) extends Abstr
   def roundRobin(shardId: ShardId, currentShardAllocations: AllocationMap): Future[ActorRef] =
     Future.successful {
       val regions = currentShardAllocations.keySet
-      val sortedRegions = regions.toVector.sorted { (x: ActorRef, y: ActorRef) =>
-        Address.addressOrdering.compare(x.path.address, y.path.address)
-      }
+      val sortedRegions = regions
+        .toVector
+        .sorted(using (x: ActorRef, y: ActorRef) => Address.addressOrdering.compare(x.path.address, y.path.address))
       // val sortedRegions = scala.collection.SortedSet.from(regions)((x: ActorRef, y: ActorRef) => Address.addressOrdering.compare(x.path.address, y.path.address))
       val regionInd = (seqNum.getAndIncrement() % regions.size).toInt
       val candidate = Vector.from(sortedRegions)(regionInd)

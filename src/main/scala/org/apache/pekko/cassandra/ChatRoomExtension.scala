@@ -120,7 +120,7 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
              |${sb.toString()}
              |""".stripMargin)
         mostRecentMsgs
-      }(using ExecutionContext.parasitic)
+      }(ExecutionContext.parasitic)
   }
 
   private def readChatRecentHistoryImpl(
@@ -135,7 +135,7 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
       }
       .mapAsyncUnordered(parallelism) { (cmd, p) =>
         val f = getRecentHistory(cmd, stmt)
-        f.onComplete(p.tryComplete(_))(using ExecutionContext.parasitic)
+        f.onComplete(p.tryComplete(_))(ExecutionContext.parasitic)
         f
       }
       .addAttributes(
@@ -186,7 +186,7 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
               }
             }
 
-        f.onComplete(p.tryComplete(_))(using ExecutionContext.parasitic)
+        f.onComplete(p.tryComplete(_))(ExecutionContext.parasitic)
         f
       }
       .addAttributes(
