@@ -115,3 +115,6 @@ networks:
 
 # docker exec -it cassandra-1 cqlsh
 # CREATE KEYSPACE IF NOT EXISTS chat WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 3 };
+
+# docker exec -it cassandra-1 bash
+# nodetool ring

@@ -1,18 +1,15 @@
 //https://github.com/scala/scala3/releases/tag/3.3.7
 //val scala3Version = "3.3.7"
 
-
 //https://docs.scala-lang.org/getting-started/install-scala.html
-//https://www.scala-lang.org/news/3.7.4
-//https://www.scala-lang.org/news/3.8.1
-//https://www.scala-lang.org/news/3.8.2
-val scala3Version = "3.8.3" //"3.7.4"
+//https://www.scala-lang.org/news/3.8.4
+val scala3Version = "3.8.4" //"3.7.4"
 
 //https://github.com/apache/pekko/tags
-//https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.5.html
-val pekkoV = "1.5.0"
+//https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.6.html
+val pekkoV = "1.6.0"
 
-val logbackVersion = "1.5.32"
+val logbackVersion = "1.6.2"
 val slf4jVersion = "2.0.17"
 
 //https://github.com/apache/pekko-http/tags
@@ -22,7 +19,6 @@ val pekkoHttpV = "1.3.0"
 val PekkoManagementVersion = "1.2.1"
 
 val ProjectName = "safer-chat"
-
 
 //https://github.com/com-lihaoyi/Ammonite/releases
 //https://repo1.maven.org/maven2/com/lihaoyi/ammonite_3.8.1/3.0.9/
@@ -139,13 +135,13 @@ lazy val root = project
       "org.slf4j" % "slf4j-api" % slf4jVersion,
 
       "com.madgag.spongycastle" % "core" % "1.58.0.0",
-      "org.bouncycastle" % "bcpkix-jdk18on" % "1.83",
+      "org.bouncycastle" % "bcpkix-jdk18on" % "1.84",
 
       "io.aeron" % "aeron-driver" % "1.46.6", //is jdk17 only
       "io.aeron" % "aeron-client" % "1.46.6",
 
-      "org.wvlet.airframe" %% "airframe-ulid" % "2026.1.4",
-      "com.github.bastiaanjansen" % "otp-java" % "2.1.0",
+      "org.wvlet.airframe" %% "airframe-ulid" % "2026.2.2",
+      "com.github.bastiaanjansen" % "otp-java" % "2.2.0",
       "com.datastax.oss" % "java-driver-core" % "4.17.0",
 
       //https://github.com/f4b6a3/uuid-creator
@@ -164,8 +160,9 @@ lazy val root = project
 
       //https://www.creativescala.org/terminus/
       //https://github.com/creativescala/terminus.git
-      //https://github.com/mattlianje/layoutz
       "org.creativescala" %%% "terminus-core" % "0.4.0",
+
+      //https://github.com/mattlianje/layoutz
 
       //https://github.com/lightbend-labs/lightbend-emoji
       //  Key: ✔️ = Good, ⚠️ = Sub-optimal, ⛔ = Bad, 💀 = Horrible
@@ -365,9 +362,9 @@ val unnamedJavaOptions = List(
 
 //sbt asm
 
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC -Xmx128m -jar ./target/scala-3.8.3/safer-chat-0.2.0.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC -Xmx128m -jar ./target/scala-3.8.4/safer-chat-0.2.0.jar
 
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 -Dpekko.cluster.multi-data-center.self-data-center=session-DC -Xmx256m -jar ./target/scala-3.8.3/safer-chat-0.2.0.jar
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.3 -Dpekko.management.http.hostname=127.0.0.3 -Dpekko.cluster.multi-data-center.self-data-center=session-DC -Xmx256m -jar ./target/scala-3.8.3/safer-chat-0.2.0.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 -Dpekko.cluster.multi-data-center.self-data-center=session-DC -Xmx256m -jar ./target/scala-3.8.4/safer-chat-0.2.0.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.3 -Dpekko.management.http.hostname=127.0.0.3 -Dpekko.cluster.multi-data-center.self-data-center=session-DC -Xmx256m -jar ./target/scala-3.8.4/safer-chat-0.2.0.jar
 //show dependencyList
 
