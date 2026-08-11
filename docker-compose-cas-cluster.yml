@@ -2,7 +2,7 @@
 services:
 
   cassandra-1:
-    image: cassandra:5.0.8
+    image: cassandra:5.0.9
     container_name: cassandra-1
     ports:
       - 9042:9042
@@ -10,9 +10,9 @@ services:
       resources:
         limits:
           cpus: '1.5'
-          memory: 1200M
+          memory: 1250M
     volumes:
-      - ./cassandra-cluster/data1:/var/lib/cassandra:rw
+      - ./cassandra-cluster9/data1:/var/lib/cassandra:rw
     networks:
       - cassandra-net
     environment:
@@ -34,12 +34,12 @@ services:
       retries: 3
 
   cassandra-2:
-    image: cassandra:5.0.8
+    image: cassandra:5.0.9
     container_name: cassandra-2
     ports:
       - 9043:9042
     volumes:
-      - ./cassandra-cluster/data2:/var/lib/cassandra
+      - ./cassandra-cluster9/data2:/var/lib/cassandra
     depends_on:
       cassandra-1:
         condition: service_healthy
@@ -47,7 +47,7 @@ services:
       resources:
         limits:
           cpus: '1.5'
-          memory: 1200M
+          memory: 1250M
     networks:
       - cassandra-net
     environment:
@@ -71,12 +71,12 @@ services:
 
 
   cassandra-3:
-    image: cassandra:5.0.8
+    image: cassandra:5.0.9
     container_name: cassandra-3
     ports:
       - 9044:9042
     volumes:
-      - ./cassandra-cluster/data3:/var/lib/cassandra
+      - ./cassandra-cluster9/data3:/var/lib/cassandra
     depends_on:
       cassandra-2:
         condition: service_healthy
@@ -84,7 +84,7 @@ services:
       resources:
         limits:
           cpus: '1.5'
-          memory: 1200M
+          memory: 1250M
     networks:
       - cassandra-net
     environment:
@@ -112,6 +112,7 @@ networks:
 
 #docker restart cassandra-2 cassandra-3
 #docker exec -it cassandra-1 nodetool status
+#docker exec -it cassandra-1 nodetool ring
 
 # docker exec -it cassandra-1 cqlsh
 # CREATE KEYSPACE IF NOT EXISTS chat WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 3 };
