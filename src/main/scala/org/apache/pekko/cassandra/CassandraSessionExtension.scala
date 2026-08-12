@@ -39,6 +39,7 @@ class CassandraSessionExtension(system: ActorSystem) extends Extension {
 
     val session = CqlSession
       .builder()
+      // .addContactPoints(cassandraHosts)
       .withCloudSecureConnectBundle(astraUrl)
       // .withTimestampGenerator(new AtomicMonotonicTimestampGenerator())
       .withAuthCredentials(

@@ -105,7 +105,7 @@ object CassandraStore {
       .to(Sink.foreach(cnt => log.warning(s" ★ ★ ★ ★ $msg NumOfMsg:$cnt in last $duration")))
       .withAttributes(Attributes.inputBuffer(1, 1))
 
-  val chatDetailsDDL = {
+  val chatDetailsDDL =
     """
       |CREATE TABLE IF NOT EXISTS chat_details (
       |   chat text,
@@ -115,15 +115,15 @@ object CassandraStore {
       |);
       |""".stripMargin
 
-    """
-      |CREATE TABLE IF NOT EXISTS timeline2 (
-      |   chat text,
-      |   messageid timeuuid,
-      |   message blob,
-      |   PRIMARY KEY (chat, messageid)) WITH CLUSTERING ORDER BY (messageid DESC);
-      |""".stripMargin
-  }
-
+  /*
+  """
+    |CREATE TABLE IF NOT EXISTS timeline2 (
+    |   chat text,
+    |   messageid timeuuid,
+    |   message blob,
+    |   PRIMARY KEY (chat, messageid)) WITH CLUSTERING ORDER BY (messageid DESC);
+    |""".stripMargin
+  */
   val chatTimelineDDL =
     """
       |CREATE TABLE IF NOT EXISTS timeline (

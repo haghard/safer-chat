@@ -75,13 +75,13 @@ final class ChatRoomSessionApi(
       )(() => Flow.lazyFutureFlow(() => chatRoomFlow(chatRoomSessionRegion, authMsg, user)))
 
   def auth(
-      chatRegion: ActorRef[ChatCmd],
+      chatRoomRegion: ActorRef[ChatCmd],
       chat: ChatName,
       user: Participant,
       otp: Otp,
       source: Source[ClientCmd, NotUsed],
     ): Future[Source[ClientCmd, NotUsed]] =
-    chatRegion
+    chatRoomRegion
       .ask[ChatReply](replyTo => AuthUser(chat, user, otp, ReplyTo[ChatReply].toCustom(replyTo)))
       .map { reply =>
         reply.statusCode match {

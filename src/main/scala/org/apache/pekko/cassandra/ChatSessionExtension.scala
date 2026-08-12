@@ -5,18 +5,18 @@
 package org.apache.pekko.cassandra
 
 import com.datastax.oss.driver.api.core.CqlSession
-import com.datastax.oss.driver.api.core.cql.{ AsyncResultSet, BatchStatement, PreparedStatement, SimpleStatement }
+import com.datastax.oss.driver.api.core.cql.*
 import org.apache.pekko.{ NotUsed, pattern }
 import org.apache.pekko.actor.*
 import org.apache.pekko.cluster.*
 import org.apache.pekko.actor.typed.scaladsl.adapter.ClassicActorSystemOps
 import org.apache.pekko.event.LoggingAdapter
-import org.apache.pekko.stream.{ Attributes, KillSwitch, KillSwitches, OverflowStrategy }
-import org.apache.pekko.stream.scaladsl.{ Keep, MergeHub, Sink }
-import server.grpc.{ StreamMonitor, ThroughputMonitor }
+import org.apache.pekko.stream.*
+import org.apache.pekko.stream.scaladsl.*
+import server.grpc.*
 import server.grpc.chat.ServerCmd
 
-import java.time.{ Instant, ZonedDateTime }
+import java.time.*
 import java.util.UUID
 import scala.collection.mutable
 import scala.concurrent.{ ExecutionContext, Future }
@@ -53,7 +53,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
 
   given cqlSession: CqlSession = CassandraSessionExtension(system).cqlSession
 
-  // Shared sink to be used by all local grpc connections.
+  // A shared sink that write to C to be used by all local grpc connections.
   val chatSessionSharedSink = chatSessionsSinkImpl(cDetails)
 
   private def writeSingleMsg(
@@ -219,7 +219,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
         StreamMonitor("c*-hub", cmd => s"${cmd.chat.raw()}.${cmd.userInfo.user.raw()} at ${cmd.timeUuid.toUnixTs()}")
       )
       .viaMat(KillSwitches.single)(Keep.both)
-      .groupedWithin(maxBatchSize, 80.millis) // Puts 80mls upper cap on write latency
+      .groupedWithin(maxBatchSize, 50.millis) // It caps write latency at 50 ms.
       // .wireTap(printStats("CassandraSink.stats:", 30.seconds))
       .via(
         ThroughputMonitor(
@@ -229,7 +229,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
       )
       .to(
         Sink.foreachAsync(1) { (messages: Seq[ServerCmd]) =>
-          // It safe to use Future.traverse because of maxBatchSize
+          // It's safe to use Future.traverse because of maxBatchSize
           Future
             .traverse(messages.groupBy(_.chat.raw()).values) { batchPerChat =>
               val writeFunc =

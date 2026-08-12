@@ -81,7 +81,7 @@ object ChatRoomSession {
             user.raw(),
             state.onlineUsers.mkString(","),
           )
-        val replyTo0 = ReplyTo[ChatReply].toBase(replyTo)
+        val refReplyTo = ReplyTo[ChatReply].toBase(replyTo)
         given sys: ActorSystem[?] = ctx.system
         state.maybeHub match {
           case Some(hub) =>
@@ -94,7 +94,7 @@ object ChatRoomSession {
 
             val srcRef = (Source.single(getRecentHistory) ++ hub.src).runWith(StreamRefs.sourceRef[ServerCmd]())
             val sinkRef = hub.sink.runWith(StreamRefs.sinkRef[ClientCmd]())
-            replyTo0.tell(
+            refReplyTo.tell(
               ChatReply(
                 chat = chatName,
                 sourceRefStr = strRefResolver.toSerializationFormat(srcRef),
@@ -153,7 +153,7 @@ object ChatRoomSession {
             val srcRef = (Source.single(getRecentHistory) ++ chatRoomHub.src).runWith(StreamRefs.sourceRef[ServerCmd]())
             val sinkRef = chatRoomHub.sink.runWith(StreamRefs.sinkRef[ClientCmd]())
 
-            replyTo0.tell(
+            refReplyTo.tell(
               ChatReply(
                 chat = chatName,
                 sourceRefStr = strRefResolver.toSerializationFormat(srcRef),

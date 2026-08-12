@@ -194,7 +194,7 @@ object ChatRoomClient {
       s"${AnsiColor.CYAN}>>> ${sys.settings.config.getConfig("pekko.grpc.client").toString} <<<${AnsiColor.RESET}"
     )
 
-    given crClient: server.grpc.admin.ChatRoomClient =
+    given chatRootClient: server.grpc.admin.ChatRoomClient =
       server
         .grpc
         .admin
@@ -202,7 +202,7 @@ object ChatRoomClient {
           GrpcClientSettings.fromConfig("server.grpc.ChatRoom").withUserAgent(userName)
         )
 
-    given crSessionClient: server.grpc.chat.ChatRoomSessionClient =
+    given sessionClient: server.grpc.chat.ChatRoomSessionClient =
       server
         .grpc
         .chat
@@ -240,14 +240,14 @@ object ChatRoomClient {
 
     val doneF =
       for
-        _ <- crClient.addChat(ChatReq(chatName))
-        _ <- crClient.addUser(UserReq(chatName, Participant(chatUsr.handle.toString)))
+        _ <- chatRootClient.addChat(ChatReq(chatName))
+        _ <- chatRootClient.addUser(UserReq(chatName, Participant(chatUsr.handle.toString)))
         done <- postMessages(chatUsr, defaultUsr, appConf, userName, userPubKeys)
       yield done
 
     doneF.onComplete { code =>
       sys.log.warn(s"Exit: $code")
-      crSessionClient.close().onComplete { _ =>
+      sessionClient.close().onComplete { _ =>
         sys.log.warn(s"========= Participants =========")
         userPubKeys.keySet().forEach(key => sys.log.warn(s"User($key)"))
         sys.log.warn(s"========= Participants =========")

@@ -151,7 +151,7 @@ object ChatRoom {
           .thenStop()
 
       case AuthUser(chat, user, otp, replyTo) =>
-        val replyTo0 = ReplyTo[ChatReply].toBase(replyTo)
+        val refReplyTo = ReplyTo[ChatReply].toBase(replyTo)
 
         state.name match {
           case Some(chatName) =>
@@ -171,20 +171,20 @@ object ChatRoom {
               }
               if maybeOtp.map(_.verify(otp.raw())).getOrElse(false) then {
                 Effect
-                  .reply(replyTo0)(
+                  .reply(refReplyTo)(
                     ChatReply(chat, statusCode = ChatReply.StatusCode.Ok)
                   )
               } else {
                 Effect
-                  .reply(replyTo0)(ChatReply(chat, ChatReply.StatusCode.AuthorizationError))
+                  .reply(refReplyTo)(ChatReply(chat, ChatReply.StatusCode.AuthorizationError))
               }
               // }
             } else {
-              Effect.reply(replyTo0)(ChatReply(chat, ChatReply.StatusCode.UnknownUser))
+              Effect.reply(refReplyTo)(ChatReply(chat, ChatReply.StatusCode.UnknownUser))
             }
           case None =>
             Effect
-              .reply(replyTo0)(ChatReply(chat, ChatReply.StatusCode.UnknownChat))
+              .reply(refReplyTo)(ChatReply(chat, ChatReply.StatusCode.UnknownChat))
         }
 
       case StopChatEntity(chatName) =>

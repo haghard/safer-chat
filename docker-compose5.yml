@@ -1,7 +1,7 @@
 
 services:
   cassandra:
-    image: cassandra:5.0.8
+    image: cassandra:5.0.9
     hostname: cassandra-local
     healthcheck:
       test: [ "CMD-SHELL", "nc -z localhost 9042" ]
