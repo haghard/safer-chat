@@ -123,7 +123,7 @@ object CassandraStore {
     |   message blob,
     |   PRIMARY KEY (chat, messageid)) WITH CLUSTERING ORDER BY (messageid DESC);
     |""".stripMargin
-  */
+   */
   val chatTimelineDDL =
     """
       |CREATE TABLE IF NOT EXISTS timeline (

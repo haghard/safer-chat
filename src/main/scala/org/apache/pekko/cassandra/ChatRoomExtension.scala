@@ -4,7 +4,7 @@
 
 package org.apache.pekko.cassandra
 
-import com.datastax.oss.driver.api.core.CqlSession
+import com.datastax.oss.driver.api.core.{ ConsistencyLevel, CqlSession }
 import com.datastax.oss.driver.api.core.cql.{ PreparedStatement, SimpleStatement }
 import com.datastax.oss.driver.api.core.uuid.Uuids.unixTimestamp
 import com.domain.chat.ChatReply
@@ -53,6 +53,7 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
   given refResolver: ActorRefResolver = ActorRefResolver(system0)
 
   val casExt = CassandraSessionExtension(system)
+
   given cqlSession: CqlSession = casExt.cqlSession
 
   val cntr: Counter = casExt.metricRegistry.counter(CassandraSessionExtension.cntName)
@@ -61,19 +62,21 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
   private val maxBatchSize = system.settings.config.getInt("cassandra.max-batch-size")
   private val clusterMemberDetails = Cluster(system).selfMember.clusterMemberDetails()
 
-  val getChatDetails =
+  val getChatDetailsStmt: PreparedStatement =
     cqlSession.prepare(
       SimpleStatement
         .builder("SELECT participants, revision FROM chat_details WHERE chat=?")
         .setExecutionProfileName(profileName)
+        .setConsistencyLevel(ConsistencyLevel.LOCAL_QUORUM)
         .build()
     )
 
-  val getRecent: PreparedStatement =
+  val getRecentHistStmt: PreparedStatement =
     cqlSession.prepare(
       SimpleStatement
         .builder("SELECT chat, when, message FROM timeline WHERE chat=? AND time_bucket=? LIMIT ?")
         .setExecutionProfileName(profileName)
+        .setConsistencyLevel(ConsistencyLevel.LOCAL_QUORUM)
         .build()
     )
 
@@ -81,10 +84,10 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
     writeQueueImpl(clusterMemberDetails, cntr)
 
   val readChatStateQueue =
-    readChatStateQueueImpl(getChatDetails, clusterMemberDetails)
+    readChatStateQueueImpl(getChatDetailsStmt, clusterMemberDetails)
 
   val readResentHistoryQueue =
-    readChatRecentHistoryImpl(getRecent, clusterMemberDetails)
+    readChatRecentHistoryImpl(getRecentHistStmt, clusterMemberDetails)
 
   private def getRecentHistory(
       cmd: ServerCmd,
@@ -217,6 +220,7 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
         SimpleStatement
           .builder("INSERT INTO chat_details (chat, revision, participants) VALUES (?, ?, ?)")
           .setExecutionProfileName(profileName)
+          .setConsistencyLevel(ConsistencyLevel.LOCAL_QUORUM)
           .build()
       )
 

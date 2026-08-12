@@ -8,6 +8,8 @@ import org.apache.pekko.actor.*
 import com.datastax.oss.driver.api.core.*
 import com.codahale.metrics.MetricRegistry
 
+import java.net.InetSocketAddress
+
 object CassandraSessionExtension extends ExtensionId[CassandraSessionExtension] with ExtensionIdProvider {
 
   val cntName = "num-of-reqs"
@@ -37,10 +39,21 @@ class CassandraSessionExtension(system: ActorSystem) extends Extension {
     // val cnt = metricRegistry.counter(cntName)
     // metricRegistry.getMetrics().keySet().size())
 
+    /*val contactPoints = java
+      .util
+      .Arrays
+      .asList(
+        new InetSocketAddress("172.26.0.2", 9042),
+        new InetSocketAddress("172.26.0.3", 9042),
+        new InetSocketAddress("172.26.0.4", 9042),
+      )*/
+
     val session = CqlSession
       .builder()
-      // .addContactPoints(cassandraHosts)
-      .withCloudSecureConnectBundle(astraUrl)
+      // .addContactPoints(contactPoints)
+      .addContactPoint(new InetSocketAddress("127.0.0.1", 9042)) //local setup
+      .withLocalDatacenter("WEST-DC")
+      // .withCloudSecureConnectBundle(astraUrl)
       // .withTimestampGenerator(new AtomicMonotonicTimestampGenerator())
       .withAuthCredentials(
         system.settings.config.getString("cassandra.username"),
@@ -53,6 +66,5 @@ class CassandraSessionExtension(system: ActorSystem) extends Extension {
 
     session.execute(s"USE $keyspace")
     (session, metricRegistry)
-    // session
   }
 }
