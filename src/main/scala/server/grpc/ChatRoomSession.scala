@@ -57,7 +57,7 @@ object ChatRoomSession {
     Behaviors.setup { ctx =>
       given resolver: ActorRefResolver = ActorRefResolver(ctx.system)
       given strRefResolver: stream.StreamRefResolver = stream.StreamRefResolver(ctx.system)
-      given ac: ActorContext[ChatRoomCmd] = ctx
+      given ctx0: ActorContext[ChatRoomCmd] = ctx
       active(ChatRoomState(chat), kss)
     }
 
@@ -150,8 +150,9 @@ object ChatRoomSession {
                 tag = server.grpc.chat.CmdTag.GET,
               )
 
-            val srcRef = (Source.single(getRecentHistory) ++ chatRoomHub.src).runWith(StreamRefs.sourceRef[ServerCmd]())
-            val sinkRef = chatRoomHub.sink.runWith(StreamRefs.sinkRef[ClientCmd]())
+            val srcRef: SourceRef[ServerCmd] =
+              (Source.single(getRecentHistory) ++ chatRoomHub.src).runWith(StreamRefs.sourceRef[ServerCmd]())
+            val sinkRef: SinkRef[ClientCmd] = chatRoomHub.sink.runWith(StreamRefs.sinkRef[ClientCmd]())
 
             refReplyTo.tell(
               ChatReply(

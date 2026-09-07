@@ -53,14 +53,14 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
 
   given cqlSession: CqlSession = CassandraSessionExtension(system).cqlSession
 
-  // A shared sink that write to C to be used by all local grpc connections.
-  val chatSessionSharedSink = chatSessionsSinkImpl(cDetails)
+  // A shared sink that write to Cassandra to be used by all local to this node grpc connections.
+  val chatSessionSharedSink = sharedChatSessionsSink(cDetails)
 
   private def writeSingleMsg(
       cmd: ServerCmd
     )(using
       cqlSession: CqlSession,
-      ps: PreparedStatement,
+      writeMsg: PreparedStatement,
       logger: LoggingAdapter,
     ): Future[AsyncResultSet] = {
     val chatName = cmd.chat.raw()
@@ -70,7 +70,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
     val bucket = formatterMM.format(ZonedDateTime.ofInstant(Instant.ofEpochMilli(ts), UTC))
     cqlSession
       .executeAsync(
-        ps.bind(
+        writeMsg.bind(
           chatName,
           bucket,
           java.nio.ByteBuffer.wrap(bts),
@@ -198,7 +198,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
     *
     * In addition to that, it's being used to limit a number of concurrent writes to Cassandra.
     */
-  private def chatSessionsSinkImpl(
+  private def sharedChatSessionsSink(
       clusterMemberDetails: String
     ): (Sink[ServerCmd, NotUsed], KillSwitch) = {
 
@@ -211,7 +211,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
 
     // keeps consuming from the receive-buffer and aggregate state in memory
     MergeHub
-      .source[ServerCmd](perProducerBufferSize = 1) // TODO: MergeHub -> Head-of-line (HOL) blocking ???
+      .source[ServerCmd](perProducerBufferSize = 1)
       // .log("cassandra-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}")(logger)
       .buffer(maxBatchSize, OverflowStrategy.backpressure)
       .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))

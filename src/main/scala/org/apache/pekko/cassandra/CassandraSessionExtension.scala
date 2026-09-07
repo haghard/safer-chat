@@ -8,8 +8,6 @@ import org.apache.pekko.actor.*
 import com.datastax.oss.driver.api.core.*
 import com.codahale.metrics.MetricRegistry
 
-import java.net.InetSocketAddress
-
 object CassandraSessionExtension extends ExtensionId[CassandraSessionExtension] with ExtensionIdProvider {
 
   val cntName = "num-of-reqs"
@@ -51,10 +49,11 @@ class CassandraSessionExtension(system: ActorSystem) extends Extension {
     val session = CqlSession
       .builder()
       // .addContactPoints(contactPoints)
-      .addContactPoint(new InetSocketAddress("127.0.0.1", 9042)) //local setup
-      .withLocalDatacenter("WEST-DC")
-      // .withCloudSecureConnectBundle(astraUrl)
-      // .withTimestampGenerator(new AtomicMonotonicTimestampGenerator())
+      // local setup
+      // .addContactPoint(new java.net.InetSocketAddress("127.0.0.1", 9042))
+      // .withLocalDatacenter("WEST-DC") // WEST-DC|dc1
+      // local setup
+      .withCloudSecureConnectBundle(astraUrl)
       .withAuthCredentials(
         system.settings.config.getString("cassandra.username"),
         system.settings.config.getString("cassandra.psw"),

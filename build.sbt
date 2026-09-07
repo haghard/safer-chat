@@ -3,17 +3,20 @@
 
 //https://docs.scala-lang.org/getting-started/install-scala.html
 //https://www.scala-lang.org/news/3.8.4
-val scala3Version = "3.8.4" //"3.7.4"
+//val scala3Version = "3.8.4" //"3.7.4"
+
+//https://scala-lang.org/news/3.9/
+val scala3Version = "3.9.0" //JDK 17 or newer is required to compile and run
 
 //https://github.com/apache/pekko/tags
-//https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.6.html
-val pekkoV = "1.6.0"
+//https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.7.html
+val pekkoV = "1.7.0"
 
-val logbackVersion = "1.6.2"
+val logbackVersion = "1.6.3"
 val slf4jVersion = "2.0.17"
 
 //https://github.com/apache/pekko-http/tags
-val pekkoHttpV = "1.3.0"
+val pekkoHttpV = "1.4.0" 
 
 //https://github.com/apache/pekko-management/tags
 val PekkoManagementVersion = "1.2.1"
@@ -24,7 +27,7 @@ val ProjectName = "safer-chat"
 //https://repo1.maven.org/maven2/com/lihaoyi/ammonite_3.8.1/3.0.9/
 val AmmoniteVersion = "3.0.9"
 
-val AppVersion = "0.2.0"
+val AppVersion = "0.3.0"
 
 resolvers ++= Seq("Apache Snapshots" at "https://repository.apache.org/content/repositories/snapshots/")
 
@@ -135,14 +138,15 @@ lazy val root = project
       "org.slf4j" % "slf4j-api" % slf4jVersion,
 
       "com.madgag.spongycastle" % "core" % "1.58.0.0",
-      "org.bouncycastle" % "bcpkix-jdk18on" % "1.84",
+      "org.bouncycastle" % "bcpkix-jdk18on" % "1.85",
 
-      "io.aeron" % "aeron-driver" % "1.46.6", //is jdk17 only
-      "io.aeron" % "aeron-client" % "1.46.6",
+      "io.aeron" % "aeron-driver" % "1.45.2", //pekko 1.7
+      "io.aeron" % "aeron-client" % "1.45.2",
 
       "org.wvlet.airframe" %% "airframe-ulid" % "2026.2.2",
       "com.github.bastiaanjansen" % "otp-java" % "2.2.0",
       "com.datastax.oss" % "java-driver-core" % "4.17.0",
+      //"org.apache.cassandra" % "java-driver-core" % "4.19.3",
 
       //https://github.com/f4b6a3/uuid-creator
       //TODO: https://github.com/openmole/miniclust/blob/main/build.sbt
@@ -263,13 +267,12 @@ lazy val root = project
       //"-XX:+PrintGCDetails",
       //"-XshowSettings:vm",
 
+      //heap never resizes
+      "-Xms256m",
       "-Xmx256m",
-      "-Xms128m",
+      "-XX:+AlwaysPreTouch",
+      "-XX:-UseAdaptiveSizePolicy",
 
-      "-XX:+AlwaysPreTouch", //
-
-      //"-XX:ThreadStackSize=1048576", //[0 ... 1048576]
-      //"-XX:ReservedCodeCacheSize=251658240",
       "-XX:MaxDirectMemorySize=64m",
 
       /*"-XX:+PrintFieldLayout",*/
@@ -291,8 +294,7 @@ lazy val root = project
       "-XX:+UseZGC", // https://www.baeldung.com/jvm-zgc-garbage-collector
 
       "--add-opens", "java.base/sun.nio.ch=ALL-UNNAMED",
-
-      //"--add-opens", "java.base/java.nio=ALL-UNNAMED",
+      "--add-opens", "java.base/java.nio=ALL-UNNAMED",
 
       //https://youtu.be/vh4qAsxegNY?list=LL
 
@@ -362,9 +364,9 @@ val unnamedJavaOptions = List(
 
 //sbt asm
 
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC -Xmx128m -jar ./target/scala-3.8.4/safer-chat-0.2.0.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC -Xmx128m -jar ./target/scala-3.9.0/safer-chat-0.3.0.jar
 
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 -Dpekko.cluster.multi-data-center.self-data-center=session-DC -Xmx256m -jar ./target/scala-3.8.4/safer-chat-0.2.0.jar
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.3 -Dpekko.management.http.hostname=127.0.0.3 -Dpekko.cluster.multi-data-center.self-data-center=session-DC -Xmx256m -jar ./target/scala-3.8.4/safer-chat-0.2.0.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 -Dpekko.cluster.multi-data-center.self-data-center=session-DC -Xmx256m -jar ./target/scala-3.9.0/safer-chat-0.3.0.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.3 -Dpekko.management.http.hostname=127.0.0.3 -Dpekko.cluster.multi-data-center.self-data-center=session-DC -Xmx256m -jar ./target/scala-3.9.0/safer-chat-0.3.0.jar
 //show dependencyList
 

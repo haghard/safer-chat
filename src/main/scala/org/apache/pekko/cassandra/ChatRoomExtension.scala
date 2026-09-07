@@ -92,7 +92,7 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
   private def getRecentHistory(
       cmd: ServerCmd,
       getRecent: PreparedStatement,
-      limit: Int = 15,
+      pageSize: Int = 15,
     )(using
       cqlSession: CqlSession
     ): Future[Seq[ServerCmd]] = {
@@ -101,13 +101,13 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
     val bucket = formatterMM.format(ZonedDateTime.ofInstant(Instant.ofEpochMilli(ts), UTC))
 
     cqlSession
-      .executeAsync(getRecent.bind(chat, bucket, limit).setPageSize(limit))
+      .executeAsync(getRecent.bind(chat, bucket, pageSize).setPageSize(pageSize))
       .asScala
       .map { asyncResultSet =>
         var mostRecentMsgs = List.empty[ServerCmd]
         val sb = new StringBuilder()
         val iter = asyncResultSet.currentPage().iterator()
-        while iter.hasNext do {
+        while iter.hasNext() do {
           val row = iter.next()
           val timeuud = row.getUuid(1)
           val ts = unixTimestamp(timeuud)

@@ -71,7 +71,7 @@ final class ChatRoomSessionApi(
       .withBackoff(
         stream
           .RestartSettings(failoverTo.duration, failoverTo.duration.plus(2.seconds), 0.2)
-          .withMaxRestarts(12, 1.minute)
+          .withMaxRestarts(6, 1.minute)
       )(() => Flow.lazyFutureFlow(() => chatRoomFlow(chatRoomSessionRegion, authMsg, user)))
 
   def auth(
