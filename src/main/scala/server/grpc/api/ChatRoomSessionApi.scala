@@ -16,14 +16,15 @@ import org.apache.pekko.stream.*
 import org.apache.pekko.stream.scaladsl.*
 import com.domain.chat.ChatReply.StatusCode
 import com.domain.chat.*
+import com.domain.chat.session.cassandra.commands.GetRecentHistory
 import com.domain.chatRoom.*
 import org.apache.pekko.actor.typed.ActorRefResolver
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.*
 import org.apache.pekko.cassandra.{ ChatRoomExtension, ExpiringPromise }
 import org.apache.pekko.cassandra.CassandraSessionExtension
 import server.grpc.api.ChatRoomSessionApi.ChatError
-import server.grpc.chat.{ ClientCmd, CmdTag, ServerCmd }
-import shared.Domain.{ ChatName, Otp, Participant, ReplyTo }
+import server.grpc.chat.*
+import shared.Domain.*
 import shared.AppConfig
 
 import scala.util.control.NoStackTrace
@@ -47,7 +48,7 @@ final class ChatRoomSessionApi(
   given streamRefsResolver: stream.StreamRefResolver = stream.StreamRefResolver(system)
   given cqlSession: CqlSession = CassandraSessionExtension(system).cqlSession
 
-  val resentHistoryQueue = ChatRoomExtension(system).readResentHistoryQueue
+  val recentHistoryQueue = ChatRoomExtension(system).readQueue
 
   def post(in: Source[ClientCmd, NotUsed]): Source[ServerCmd, NotUsed] =
     in.prefixAndTail(1).flatMapConcat {
@@ -116,24 +117,19 @@ final class ChatRoomSessionApi(
                 srcRef
                   .source
                   .mapAsync(1) { cmd =>
-                    cmd.tag match {
-                      case CmdTag.PUT =>
-                        Future.successful(Seq(cmd))
-                      case CmdTag.GET =>
-                        val expP = ExpiringPromise[Seq[ServerCmd]](failoverTo.duration)
-                        resentHistoryQueue.offer((cmd, expP)).flatMap {
-                          case QueueOfferResult.Enqueued =>
-                            expP.future
-                          case QueueOfferResult.Dropped =>
-                            logger.warn("read-queue overflow")
-                            Future.failed(new Exception("Read overflow"))
-                          case result: QueueCompletionResult =>
-                            Future.failed(new Exception("Unexpected"))
-                        }
-                      // ChatRoomExtension(system).readQueue.getRecentHistory(cmd)
-                      case CmdTag.Unrecognized(tag) =>
-                        Future.failed(new Exception(s"Unrecognized $tag"))
-                    }
+                    if (cmd.fetchRecentHistory) {
+                      val p = ExpiringPromise[Seq[ServerCmd]](failoverTo.duration)
+                      recentHistoryQueue.offer((GetRecentHistory(cmd.chat, cmd.bucketName), p)).flatMap {
+                        case QueueOfferResult.Enqueued =>
+                          p.future
+                        case QueueOfferResult.Dropped =>
+                          logger.warn("read-queue overflow")
+                          Future.failed(new Exception("Read overflow"))
+                        case result: QueueCompletionResult =>
+                          Future.failed(new Exception("Unexpected"))
+                      }
+                    } else
+                      Future.successful(Seq(cmd))
                   }
                   .mapConcat(identity)
                   .map { msg =>

@@ -97,7 +97,7 @@ object ChatRoomClient {
         )
       ) ++
         Source
-          .tick(3.second, 800.millis, ())
+          .tick(3.second, 2000.millis, ())
           .zipWithIndex
           .map { case (_, i) => i }
           .takeWhile(_ < 100)

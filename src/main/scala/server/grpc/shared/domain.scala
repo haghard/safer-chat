@@ -228,6 +228,13 @@ object Domain {
       TypeMapper[String, ChatName](ChatName(_))(_.raw())
   }
 
+  opaque type BucketName = String
+
+  object BucketName extends Opq[BucketName, String] {
+    given mapper: scalapb.TypeMapper[String, BucketName] =
+      TypeMapper[String, BucketName](BucketName(_))(_.raw())
+  }
+
   opaque type Participant = String
   object Participant extends Opq[Participant, String] {
     given mapper: scalapb.TypeMapper[String, Participant] =
@@ -251,7 +258,6 @@ object Domain {
       TypeMapper[String, ReplyTo](ReplyTo(_))(_.raw())
   }
 
-  // IdempotencyToken
   opaque type CassandraTimeUUID = String
 
   object CassandraTimeUUID extends Opq[CassandraTimeUUID, String] {

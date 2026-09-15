@@ -69,7 +69,8 @@ lazy val scalac3Settings = Def.settings(
     "-Wconf:msg=Implicit parameters should be provided with a `using` clause:s", //silence "Implicit parameters should be provided with a `using` clause."
 
     //"-Wconf:msg=(discarded.*value|pure.*statement):error",
-    s"-Wconf:src=${(Compile / target).value}/scala-$scala3Version/pekko-grpc/.*:silent",
+    s"-Wconf:src=${(Compile / target).value}/scala-$scala3Version/pekko-grpc/.*:silent", // No Warnings inside proto generated code
+    "-Wconf:src=src_managed/.*:silent",  // No Warnings inside generated code
 
     "-Wunused:imports",
     "-no-indent", //Require classical {…} syntax, indentation is not significant.(forces to use braces)

@@ -4,8 +4,8 @@
 
 package org.apache.pekko.cassandra
 
-import com.datastax.oss.driver.api.core.{ ConsistencyLevel, CqlSession }
-import com.datastax.oss.driver.api.core.cql.{ PreparedStatement, SimpleStatement }
+import com.datastax.oss.driver.api.core.*
+import com.datastax.oss.driver.api.core.cql.*
 import com.datastax.oss.driver.api.core.uuid.Uuids.unixTimestamp
 import com.domain.chat.ChatReply
 import com.domain.chat.cdc.v1.CdcEnvelopeMessage
@@ -15,22 +15,43 @@ import org.apache.pekko.actor.typed.ActorRefResolver
 import org.apache.pekko.cluster.*
 import org.apache.pekko.actor.typed.scaladsl.adapter.ClassicActorSystemOps
 import org.apache.pekko.persistence.state.scaladsl.GetObjectResult
-import org.apache.pekko.stream.{ ActorAttributes, BoundedSourceQueue, OverflowStrategy, Supervision }
-import org.apache.pekko.stream.scaladsl.{ Keep, Sink, Source, SourceQueueWithComplete }
+import org.apache.pekko.stream.*
+import org.apache.pekko.stream.scaladsl.*
 import server.grpc.chat.ServerCmd
 import server.grpc.state.ChatState
-import shared.Domain.{ ChatName, ReplyTo }
+import shared.Domain.*
 
-import java.time.{ Instant, ZonedDateTime }
-import scala.concurrent.{ ExecutionContext, Future, Promise }
+import java.time.*
+import scala.concurrent.*
 import scala.jdk.FutureConverters.CompletionStageOps
 import scala.util.control.NonFatal
-import scala.collection.immutable.HashSet
+import scala.collection.immutable.{ HashSet, SortedSet }
 import CassandraStore.*
 import com.codahale.metrics.Counter
 import server.grpc.ChatRoom
+import com.domain.chat.session.cassandra.commands.CassandraCmd
+import com.domain.chat.session.cassandra.commands.CassandraCmdMessage.SealedValue
+import ChatRoomExtension.*
 
 object ChatRoomExtension extends ExtensionId[ChatRoomExtension] with ExtensionIdProvider {
+
+  sealed trait CmdResult[T] {
+    type Out
+
+    def cast(p: Promise[?]): Promise[Out]
+  }
+
+  given CmdResult[SealedValue.GetLastBucket] with {
+    type Out = (String, Seq[ServerCmd])
+
+    def cast(p: Promise[?]) = p.asInstanceOf[Promise[Out]]
+  }
+
+  given CmdResult[SealedValue.GetRecentHistory] with {
+    type Out = Seq[ServerCmd]
+
+    def cast(p: Promise[?]) = p.asInstanceOf[Promise[Out]]
+  }
 
   override def get(system: ActorSystem): ChatRoomExtension = super.get(system)
 
@@ -48,9 +69,11 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
 
   given system0: org.apache.pekko.actor.typed.ActorSystem[?] = system.toTyped
 
-  given ex: ExecutionContext = system0.executionContext
+  given ExecutionContext = system0.executionContext
 
-  given refResolver: ActorRefResolver = ActorRefResolver(system0)
+  given ActorRefResolver = ActorRefResolver(system0)
+
+  given Ordering[ServerCmd] = Ordering.by[ServerCmd, Long](_.timeUuid.toUnixTs())
 
   val casExt = CassandraSessionExtension(system)
 
@@ -80,28 +103,31 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
         .build()
     )
 
+  val getLastNBucketsStmt: PreparedStatement =
+    cqlSession.prepare(
+      SimpleStatement
+        .builder("SELECT time_bucket FROM timeline_buckets where chat = ? LIMIT ?")
+        .setExecutionProfileName(profileName)
+        .setConsistencyLevel(ConsistencyLevel.LOCAL_QUORUM)
+        .build()
+    )
+
   val writeChatStateQueue =
     writeQueueImpl(clusterMemberDetails, cntr)
 
   val readChatStateQueue =
     readChatStateQueueImpl(getChatDetailsStmt, clusterMemberDetails)
 
-  val readResentHistoryQueue =
-    readChatRecentHistoryImpl(getRecentHistStmt, clusterMemberDetails)
+  val readQueue =
+    readHistoryQueue(clusterMemberDetails)
 
   private def getRecentHistory(
-      cmd: ServerCmd,
-      getRecent: PreparedStatement,
-      pageSize: Int = 15,
+      bs: BoundStatement
     )(using
       cqlSession: CqlSession
-    ): Future[Seq[ServerCmd]] = {
-    val chat = cmd.chat.raw()
-    val ts = cmd.timeUuid.toUnixTs()
-    val bucket = formatterMM.format(ZonedDateTime.ofInstant(Instant.ofEpochMilli(ts), UTC))
-
+    ): Future[Seq[ServerCmd]] =
     cqlSession
-      .executeAsync(getRecent.bind(chat, bucket, pageSize).setPageSize(pageSize))
+      .executeAsync(bs)
       .asScala
       .map { asyncResultSet =>
         var mostRecentMsgs = List.empty[ServerCmd]
@@ -119,33 +145,94 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
           ).append("\n")
         }
         logger.debug(s"""
-             |Last ${mostRecentMsgs.length}. $chat / $bucket
+             |RecentHistory: ${mostRecentMsgs.length}. ${mostRecentMsgs.headOption.map(r => r.chat.raw())}
              |${sb.toString()}
              |""".stripMargin)
         mostRecentMsgs
       }(ExecutionContext.parasitic)
-  }
 
-  private def readChatRecentHistoryImpl(
-      stmt: PreparedStatement,
+  private def getBucketNames(
+      bs: BoundStatement
+    )(using cqlSession: CqlSession
+    ): Future[List[String]] =
+    cqlSession
+      .executeAsync(bs)
+      .asScala
+      .map { asyncResultSet =>
+        var buckets = List.empty[String]
+        val iter = asyncResultSet.currentPage().iterator()
+        while iter.hasNext() do {
+          val row = iter.next()
+          buckets = row.getString("time_bucket") :: buckets
+        }
+        buckets.reverse
+      }(ExecutionContext.parasitic)
+
+  def fetchRecentHistory(
+      bucketNames: List[String],
+      recentHistory: SortedSet[ServerCmd],
+      chat: String,
+      pageSize: Int,
+    ): Future[Seq[ServerCmd]] =
+    bucketNames match {
+      case bucketName :: othersBucketNames =>
+        getRecentHistory(getRecentHistStmt.bind(chat, bucketName, pageSize).setPageSize(pageSize)).flatMap { rows =>
+          val allRecentHistory = recentHistory ++ rows
+          if (allRecentHistory.size < pageSize)
+            fetchRecentHistory(othersBucketNames, allRecentHistory, chat, pageSize)
+          else
+            Future.successful(allRecentHistory.toSeq)
+        }
+      case Nil =>
+        Future.successful(recentHistory.toSeq)
+    }
+
+  def readHistoryQueue(
       cDetails: String,
-    ): SourceQueueWithComplete[(ServerCmd, Promise[Seq[ServerCmd]])] =
+      pageSize: Int = 15,
+      numOfBucket: Int = 3,
+    ): SourceQueueWithComplete[(CassandraCmd, Promise[?])] =
     Source
-      .queue[(ServerCmd, Promise[Seq[ServerCmd]])](maxBatchSize * 2, OverflowStrategy.backpressure)
+      .queue[(CassandraCmd, Promise[?])](maxBatchSize * 2, OverflowStrategy.backpressure)
       .mapMaterializedValue { q =>
-        logger.info(s"ReadChatRecentHistory($cDetails) materialization")
+        logger.info(s"ReadQueue($cDetails) materialization")
         q
       }
       .mapAsyncUnordered(parallelism) { (cmd, p) =>
-        val f = getRecentHistory(cmd, stmt)
-        f.onComplete(p.tryComplete(_))(ExecutionContext.parasitic)
-        f
+        cmd.asMessage.sealedValue match {
+          case SealedValue.GetLastBucket(c) =>
+            val f =
+              getBucketNames(getLastNBucketsStmt.bind(c.chat.raw(), numOfBucket)).flatMap { bucketNames =>
+                fetchRecentHistory(bucketNames, SortedSet.empty[ServerCmd], c.chat.raw(), pageSize).map { rows =>
+                  (bucketNames.headOption.getOrElse(""), rows)
+                }
+              }
+            f.onComplete(summon[CmdResult[SealedValue.GetLastBucket]].cast(p).tryComplete(_))(
+              ExecutionContext.parasitic
+            )
+            f
+          case SealedValue.GetRecentHistory(c) =>
+            val f =
+              getRecentHistory(getRecentHistStmt.bind(c.chat.raw(), c.bucketName, pageSize)).flatMap { rows =>
+                if (rows.size < pageSize) {
+                  getBucketNames(getLastNBucketsStmt.bind(c.chat.raw(), numOfBucket)).flatMap { bucketNames =>
+                    fetchRecentHistory(bucketNames, SortedSet.empty[ServerCmd], c.chat.raw(), pageSize)
+                  }
+                } else
+                  Future.successful(rows)
+              }
+            f.onComplete(summon[CmdResult[SealedValue.GetRecentHistory]].cast(p).tryComplete(_))(
+              ExecutionContext.parasitic
+            )
+            f
+          case SealedValue.Empty =>
+            Future.failed(new Exception("CassandraCmd.Empty"))
+        }
       }
       .addAttributes(
         ActorAttributes.supervisionStrategy {
           case NonFatal(cause) =>
-            logger
-              .info(s"${classOf[CassandraStore].getName}(ReadChatRecentHistory) failed and resumed", cause)
+            logger.info(s"${classOf[CassandraStore].getName}(Read) failed and resumed", cause)
             Supervision.Resume
         }
       )
@@ -201,20 +288,20 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
         }
       )
       .toMat(Sink.ignore)(Keep.left)
-      // .toMat(Sink.foreach((p, res) => p.tryComplete(res)))(Keep.left)
       .run()
 
-  private def extractPartition(e: WriteOp): ChatName =
-    e._2 match {
-      case CdcEnvelopeMessage.SealedValue.Created(cdc) =>
-        cdc.chat
-      case CdcEnvelopeMessage.SealedValue.AddedV2(cdc) =>
-        cdc.chat
-      case CdcEnvelopeMessage.SealedValue.Empty =>
-        throw new Exception(s"Unsupported partition")
-    }
-
   private def writeQueueImpl(clusterMemberDetails: String, cntr: Counter): BoundedSourceQueue[WriteOp] = {
+
+    def extractPartition(e: WriteOp): ChatName =
+      e._2 match {
+        case CdcEnvelopeMessage.SealedValue.Created(cdc) =>
+          cdc.chat
+        case CdcEnvelopeMessage.SealedValue.AddedV2(cdc) =>
+          cdc.chat
+        case CdcEnvelopeMessage.SealedValue.Empty =>
+          throw new Exception(s"Unsupported partition")
+      }
+
     val stmt: PreparedStatement =
       cqlSession.prepare(
         SimpleStatement
@@ -252,14 +339,14 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
 
   def updateChatRoom(
       revision: Long,
-      chatDetailsAction: CdcEnvelopeMessage.SealedValue,
+      chatDetailsCmd: CdcEnvelopeMessage.SealedValue,
       ps: PreparedStatement,
       cntr: Counter,
     )(using
       resolver: ActorRefResolver,
       session: CqlSession,
     ): Future[Done] =
-    chatDetailsAction match {
+    chatDetailsCmd match {
       case CdcEnvelopeMessage.SealedValue.Created(cdc) =>
         session
           .executeAsync(ps.bind(cdc.chat.raw(), Long.box(revision), ""))

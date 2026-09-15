@@ -16,18 +16,15 @@ import org.apache.pekko.stream.scaladsl.*
 import server.grpc.*
 import server.grpc.chat.ServerCmd
 
-import java.time.*
-import java.util.UUID
 import scala.collection.mutable
 import scala.concurrent.{ ExecutionContext, Future }
 import scala.concurrent.duration.DurationInt
 import scala.jdk.FutureConverters.CompletionStageOps
 import scala.util.{ Failure, Success }
-import CassandraStore.*
 
 object ChatSessionExtension extends ExtensionId[ChatSessionExtension] with ExtensionIdProvider {
 
-  given ord: scala.math.Ordering[ServerCmd] = (x: ServerCmd, y: ServerCmd) =>
+  given tsOrd: scala.math.Ordering[ServerCmd] = (x: ServerCmd, y: ServerCmd) =>
     x.timeUuid.toUnixTs().compareTo(y.timeUuid.toUnixTs())
 
   override def get(system: ActorSystem): ChatSessionExtension = super.get(system)
@@ -56,41 +53,65 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
   // A shared sink that write to Cassandra to be used by all local to this node grpc connections.
   val chatSessionSharedSink = sharedChatSessionsSink(cDetails)
 
+  val writeBuckets: PreparedStatement = cqlSession.prepare(
+    SimpleStatement
+      .builder("INSERT INTO chat.timeline_buckets(chat, time_bucket) VALUES (?,?)")
+      .setExecutionProfileName(profileName)
+      .build()
+  )
+
   private def writeSingleMsg(
       cmd: ServerCmd
     )(using
       cqlSession: CqlSession,
-      writeMsg: PreparedStatement,
+      writeMsgStmt: PreparedStatement,
       logger: LoggingAdapter,
     ): Future[AsyncResultSet] = {
     val chatName = cmd.chat.raw()
-    val tbu: UUID = cmd.timeUuid.toUUID()
-    val bts = cmd.toByteArray
+    val timeUuid = cmd.timeUuid.toUUID()
     val ts = cmd.timeUuid.toUnixTs()
-    val bucket = formatterMM.format(ZonedDateTime.ofInstant(Instant.ofEpochMilli(ts), UTC))
-    cqlSession
-      .executeAsync(
-        writeMsg.bind(
-          chatName,
-          bucket,
-          java.nio.ByteBuffer.wrap(bts),
-          tbu,
-        )
-      )
-      .asScala
-      .transform { asyncResult =>
-        asyncResult match {
-          case Success(value) =>
-            logger.info(s"${Thread.currentThread().getName}: $chatName.$ts.")
-            asyncResult
-          case Failure(ex) =>
-            logger.error(s"Write error $chatName: $ts. Error:${ex.getMessage()}")
-            asyncResult
-        }
-      }(using ExecutionContext.parasitic)
+    val cmdBts = cmd.toByteArray
+    (if (cmd.isNewBucketStarted) {
+       val batchStmts =
+         BatchStatement
+           .newInstance(
+             com.datastax.oss.driver.api.core.cql.DefaultBatchType.LOGGED
+           ) // Keeping 2 tables in sync across multiple partitions.
+           .addAll(
+             writeMsgStmt.bind(
+               chatName,
+               cmd.bucketName,
+               java.nio.ByteBuffer.wrap(cmdBts),
+               timeUuid,
+             ),
+             writeBuckets.bind(chatName, cmd.bucketName),
+           )
+       cqlSession.executeAsync(batchStmts)
+     } else {
+       cqlSession
+         .executeAsync(
+           writeMsgStmt.bind(
+             chatName,
+             cmd.bucketName,
+             java.nio.ByteBuffer.wrap(cmdBts),
+             timeUuid,
+           )
+         )
+     })
+    .asScala
+    .transform { asyncResult =>
+      asyncResult match {
+        case Success(value) =>
+          logger.info(s"${Thread.currentThread().getName}: $chatName.$ts.")
+          asyncResult
+        case Failure(ex) =>
+          logger.error(s"Write error $chatName: $ts. Error:${ex.getMessage()}")
+          asyncResult
+      }
+    }(using ExecutionContext.parasitic)
   }
 
-  private def writeBatch(
+  private def writeSinglePartitionBatch(
       cmds: mutable.SortedSet[ServerCmd]
     )(using
       cqlSession: CqlSession,
@@ -99,19 +120,17 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
     ): Future[AsyncResultSet] = {
 
     val chatName = cmds.head.chat.raw()
-    val revisions = cmds.map(_.timeUuid.toUnixTs()).mkString(",")
-    val timeBucket =
-      formatterMM.format(ZonedDateTime.ofInstant(Instant.ofEpochMilli(cmds.head.timeUuid.toUnixTs()), UTC))
-
-    var batchStmts = BatchStatement.newInstance(com.datastax.oss.driver.api.core.cql.DefaultBatchType.UNLOGGED)
+    val unixTss = cmds.map(_.timeUuid.toUnixTs()).mkString(",")
+    var batchStmts = BatchStatement.newInstance(
+      com.datastax.oss.driver.api.core.cql.DefaultBatchType.UNLOGGED
+    ) // single partition writes
     cmds.foreach { cmd =>
-      val tbu = cmd.timeUuid.toUUID()
       batchStmts = batchStmts.add(
         ps.bind(
           chatName,
-          timeBucket,
+          cmds.head.bucketName,
           java.nio.ByteBuffer.wrap(cmd.toByteArray),
-          tbu,
+          cmd.timeUuid.toUUID(),
         )
       )
     }
@@ -122,70 +141,16 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
       .transform { asyncResult =>
         asyncResult match {
           case Success(ar) =>
-            logger.info(s"${Thread.currentThread().getName}: Written batch: $chatName: [$revisions]")
+            logger.info(s"${Thread.currentThread().getName}: Written batch: $chatName: [$unixTss]")
             asyncResult
           case Failure(ex) =>
             // UnavailableException, WriteTimeoutException, NoNodeAvailableException
-            logger.error(s"WriteBatch error: $chatName: [$revisions]. Error:${ex.getMessage()}")
+            logger.error(s"WriteBatch error: $chatName: [$unixTss]. Error:${ex.getMessage()}")
             asyncResult
         }
       }(using ExecutionContext.parasitic)
 
   }
-
-  /*def chatSessionsSinkImpl0(
-    clusterMemberDetails: String
-  )(using system: ActorSystem[?]
-  ): (Sink[ServerCmd, NotUsed], KillSwitch) = {
-    val parallelism = system.settings.config.getInt("cassandra.parallelism")
-    val maxBatchSize = system.settings.config.getInt("cassandra.max-batch-size")
-    val classicSystem: org.apache.pekko.actor.ActorSystem = system.toClassic
-
-    given logger: LoggingAdapter = classicSystem.log
-
-    given sch: Scheduler = classicSystem.scheduler
-
-    given ec: ExecutionContext = system.executionContext
-
-    given cqlSession: CqlSession = CassandraSessionExtension(classicSystem).cqlSession
-
-    given ps: PreparedStatement = cqlSession.prepare(
-      SimpleStatement
-        .builder("INSERT INTO chat.timeline(chat, time_bucket, message, when) VALUES (?,?,?,?)")
-        .setExecutionProfileName(profileName)
-        .build()
-    )
-
-    // stops consuming from the tcp-receive buffer as soon as this buffer fills up.
-    MergeHub
-      .source[ServerCmd](perProducerBufferSize = 1)
-      .mapMaterializedValue { sink =>
-        logger.info(s"MergeHub(c*-hub) materialization")
-        sink
-      }
-      .via(StreamMonitor("c*-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}"))
-      .buffer(maxBatchSize, OverflowStrategy.backpressure)
-      .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
-      /*.withAttributes(
-        Attributes
-          .inputBuffer(maxBatchSize, maxBatchSize)
-          .and(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
-      )*/
-      //  https://github.com/jaceksokol/akka-stream-map-async-partition/blob/main/src/test/scala/com/github/jaceksokol/akka/stream/MapAsyncPartitionSpec.scala
-      .mapAsyncPartitioned(parallelism)(_.chat.raw()) { (cmd, _) =>
-        val fn = () => writeSingleMsg(cmd)
-        pattern.retry(fn, Int.MaxValue, 3.seconds).map(_ => cmd)(ExecutionContext.parasitic)
-      }
-      .via(
-        ThroughputMonitor(
-          20.seconds,
-          state => logger.warning(s"c*-throughput($clusterMemberDetails):${state.throughput()}"),
-        )
-      )
-      .viaMat(KillSwitches.single)(Keep.both)
-      .toMat(Sink.ignore)(Keep.left)
-      .run()
-  }*/
 
   /** Imagine you would have a high number of users connected to a local node, and they all write messages. We need a
     * way to backpressure (flow control) this traffic all the way from the tcp receive buffer to Cassandra.
@@ -193,10 +158,10 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
     * More specifically, we don't want to read from the tcp socket (receive buffer) if the Cassandra client it's not
     * writing the messages quickly enough.
     *
-    * Creates a shared sink to be used by all connected to this node users to be able to consume and write message to
-    * Cassandra in a backpressure-aware manner using fixed memory.
+    * This method creates a shared sink to be used by all connected to this node users to be able to consume and write
+    * message to Cassandra in a backpressure-aware manner using fixed memory.
     *
-    * In addition to that, it's being used to limit a number of concurrent writes to Cassandra.
+    * In addition to that, this sink is being used to limit the number of concurrent writes to Cassandra.
     */
   private def sharedChatSessionsSink(
       clusterMemberDetails: String
@@ -216,10 +181,13 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
       .buffer(maxBatchSize, OverflowStrategy.backpressure)
       .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
       .via(
-        StreamMonitor("c*-hub", cmd => s"${cmd.chat.raw()}.${cmd.userInfo.user.raw()} at ${cmd.timeUuid.toUnixTs()}")
+        StreamMonitor(
+          "c*-merge-hub",
+          cmd => s"${cmd.chat.raw()}.${cmd.userInfo.user.raw()} at ${cmd.timeUuid.toUnixTs()}",
+        )
       )
       .viaMat(KillSwitches.single)(Keep.both)
-      .groupedWithin(maxBatchSize, 50.millis) // It caps write latency at 50 ms.
+      .groupedWithin(maxBatchSize, 300.millis) // It caps write latency at 50 ms.
       // .wireTap(printStats("CassandraSink.stats:", 30.seconds))
       .via(
         ThroughputMonitor(
@@ -229,17 +197,22 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
       )
       .to(
         Sink.foreachAsync(1) { (messages: Seq[ServerCmd]) =>
-          // It's safe to use Future.traverse because of maxBatchSize
+          // It's safe to use Future.traverse here because `maxBatchSize` restricts max parallelism level.
           Future
             .traverse(messages.groupBy(_.chat.raw()).values) { batchPerChat =>
-              val writeFunc =
+              val writeFn =
                 batchPerChat.size match {
                   case 1 =>
                     () => writeSingleMsg(batchPerChat.head)
                   case n =>
-                    () => writeBatch(mutable.SortedSet.from(batchPerChat)(using ChatSessionExtension.ord))
+                    val orderedBatch = mutable.SortedSet.from(batchPerChat)(using ChatSessionExtension.tsOrd)
+                    if (orderedBatch.forall(!_.isNewBucketStarted))
+                      () => writeSinglePartitionBatch(orderedBatch)
+                    else { () =>
+                      Future.traverse(orderedBatch.toSeq)(writeSingleMsg)
+                    }
                 }
-              pattern.retry(writeFunc, Int.MaxValue, 3.seconds)
+              pattern.retry(writeFn, Int.MaxValue, 3.seconds)
             }
             .map(_ => ())(using ExecutionContext.parasitic)
         }
@@ -280,4 +253,57 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
       )
       .run()*/
 
+  /*def chatSessionsSinkImpl0(
+      clusterMemberDetails: String
+    )(using system: ActorSystem[?]
+    ): (Sink[ServerCmd, NotUsed], KillSwitch) = {
+      val parallelism = system.settings.config.getInt("cassandra.parallelism")
+      val maxBatchSize = system.settings.config.getInt("cassandra.max-batch-size")
+      val classicSystem: org.apache.pekko.actor.ActorSystem = system.toClassic
+
+      given logger: LoggingAdapter = classicSystem.log
+
+      given sch: Scheduler = classicSystem.scheduler
+
+      given ec: ExecutionContext = system.executionContext
+
+      given cqlSession: CqlSession = CassandraSessionExtension(classicSystem).cqlSession
+
+      given ps: PreparedStatement = cqlSession.prepare(
+        SimpleStatement
+          .builder("INSERT INTO chat.timeline(chat, time_bucket, message, when) VALUES (?,?,?,?)")
+          .setExecutionProfileName(profileName)
+          .build()
+      )
+
+      // stops consuming from the tcp-receive buffer as soon as this buffer fills up.
+      MergeHub
+        .source[ServerCmd](perProducerBufferSize = 1)
+        .mapMaterializedValue { sink =>
+          logger.info(s"MergeHub(c*-hub) materialization")
+          sink
+        }
+        .via(StreamMonitor("c*-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}"))
+        .buffer(maxBatchSize, OverflowStrategy.backpressure)
+        .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
+        /*.withAttributes(
+          Attributes
+            .inputBuffer(maxBatchSize, maxBatchSize)
+            .and(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
+        )*/
+        //  https://github.com/jaceksokol/akka-stream-map-async-partition/blob/main/src/test/scala/com/github/jaceksokol/akka/stream/MapAsyncPartitionSpec.scala
+        .mapAsyncPartitioned(parallelism)(_.chat.raw()) { (cmd, _) =>
+          val fn = () => writeSingleMsg(cmd)
+          pattern.retry(fn, Int.MaxValue, 3.seconds).map(_ => cmd)(ExecutionContext.parasitic)
+        }
+        .via(
+          ThroughputMonitor(
+            20.seconds,
+            state => logger.warning(s"c*-throughput($clusterMemberDetails):${state.throughput()}"),
+          )
+        )
+        .viaMat(KillSwitches.single)(Keep.both)
+        .toMat(Sink.ignore)(Keep.left)
+        .run()
+    }*/
 }

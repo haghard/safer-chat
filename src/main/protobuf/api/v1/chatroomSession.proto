@@ -49,10 +49,8 @@ message ServerCmd {
   map<string, bytes> content = 2;
   UserInfo userInfo = 3 [(scalapb.field).no_box = true];
   string timeUuid = 4 [(scalapb.field).type = "shared.Domain.CassandraTimeUUID"];
-  CmdTag tag = 5;
+  string bucketName = 5 [(scalapb.field).type = "shared.Domain.BucketName"];
+  bool isNewBucketStarted = 6;
+  bool fetchRecentHistory = 7;
 }
 
-enum CmdTag {
-  PUT = 0;
-  GET = 1;
-}

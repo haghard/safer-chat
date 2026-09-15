@@ -32,7 +32,7 @@ import scala.concurrent.duration.*
 object CassandraStore {
 
   val profileName = "default"
-
+  // val formatterMM = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm") for testing
   val formatterMM = DateTimeFormatter.ofPattern("yyyy-MM")
   val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss:SSSSSS Z")
   val UTC = ZoneId.of(java.util.TimeZone.getTimeZone("UTC").getID)
@@ -83,8 +83,11 @@ object CassandraStore {
       cqlSession.execute(CassandraStore.chatDetailsDDL)
       log.info("Executed \n" + CassandraStore.chatDetailsDDL)
 
-      cqlSession.execute(CassandraStore.chatTimelineDDL)
-      log.info("Executed \n" + CassandraStore.chatTimelineDDL)
+      cqlSession.execute(CassandraStore.timelineBucketDDL)
+      log.info("Executed \n" + CassandraStore.timelineBucketDDL)
+
+      cqlSession.execute(CassandraStore.timelineDDL)
+      log.info("Executed \n" + CassandraStore.timelineDDL)
 
     } catch {
       case NonFatal(ex) =>
@@ -115,16 +118,15 @@ object CassandraStore {
       |);
       |""".stripMargin
 
-  /*
-  """
-    |CREATE TABLE IF NOT EXISTS timeline2 (
-    |   chat text,
-    |   messageid timeuuid,
-    |   message blob,
-    |   PRIMARY KEY (chat, messageid)) WITH CLUSTERING ORDER BY (messageid DESC);
-    |""".stripMargin
-   */
-  val chatTimelineDDL =
+  val timelineBucketDDL =
+    """
+      |CREATE TABLE IF NOT EXISTS timeline_buckets (
+      |   chat text,
+      |   time_bucket varchar,
+      |   PRIMARY KEY ((chat), time_bucket)) WITH CLUSTERING ORDER BY (time_bucket DESC);
+      |""".stripMargin
+
+  val timelineDDL =
     """
       |CREATE TABLE IF NOT EXISTS timeline (
       |   chat text,
@@ -147,7 +149,8 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
       val readTimeout = 3.seconds
 
       cqlSession.execute(CassandraStore.chatDetailsDDL)
-      cqlSession.execute(CassandraStore.chatTimelineDDL)
+      cqlSession.execute(CassandraStore.timelineBucketDDL)
+      cqlSession.execute(CassandraStore.timelineDDL)
 
       val writeQueue = ChatRoomExtension(system).writeChatStateQueue
       val readQueue = ChatRoomExtension(system).readChatStateQueue

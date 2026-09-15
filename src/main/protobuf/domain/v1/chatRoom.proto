@@ -29,7 +29,6 @@ message ConnectRequest {
   string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
   string otp = 3 [(scalapb.field).type = "shared.Domain.Otp"];
   string replyTo = 4 [(scalapb.field).type = "shared.Domain.ReplyTo"];
-
 }
 
 message Disconnect {
@@ -37,4 +36,13 @@ message Disconnect {
   string user = 1 [(scalapb.field).type = "shared.Domain.Participant"];
   string chat = 2 [(scalapb.field).type = "shared.Domain.ChatName"];
   string otp = 3 [(scalapb.field).type = "shared.Domain.Otp"];
+}
+
+message LastSeenBucket {
+  option (scalapb.message).extends = "ChatRoomCmd";
+  string bucketName = 1;
+  string chat = 2 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string user = 3 [(scalapb.field).type = "shared.Domain.Participant"];
+  repeated server.grpc.chat.ServerCmd recentHistory = 4;
+  string replyTo = 5 [(scalapb.field).type = "shared.Domain.ReplyTo"];
 }
