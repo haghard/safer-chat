@@ -11,18 +11,8 @@ package server.grpc.chat;
 
 service ChatRoomSession {
 
-  rpc Post (stream ClientCmd) returns (stream ServerCmd) {}
+  rpc Post (stream LiveClientMessage) returns (stream LiveServerMessage) {}
 }
-
-option (scalapb.options) = {
-  lenses: true,
-  preserve_unknown_fields: false,
-  no_default_values_in_constructor: false,
-  no_primitive_wrappers: true,
-  single_file: true,
-  scala3_sources: true,
-  preamble: "sealed trait Cmd extends scalapb.GeneratedMessage"
-};
 
 message UserInfo {
   string user = 1 [(scalapb.field).type = "shared.Domain.Participant"];
@@ -34,8 +24,7 @@ message Coords {
   double lon = 2;
 }
 
-message ClientCmd {
-  option (scalapb.message).extends = "Cmd";
+message LiveClientMessage {
   string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
   map<string, bytes> content = 2;
   UserInfo userInfo = 3 [(scalapb.field).no_box = true];
@@ -44,13 +33,24 @@ message ClientCmd {
 }
 
 message ServerCmd {
-  option (scalapb.message).extends = "Cmd";
+  oneof sealed_value {
+    LiveServerMessage liveServerMessage = 1;
+
+    //internal cmd
+    FetchRecentHistory fetchRecentHistory = 2;
+  }
+}
+
+message LiveServerMessage {
   string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
   map<string, bytes> content = 2;
   UserInfo userInfo = 3 [(scalapb.field).no_box = true];
   string timeUuid = 4 [(scalapb.field).type = "shared.Domain.CassandraTimeUUID"];
   string bucketName = 5 [(scalapb.field).type = "shared.Domain.BucketName"];
   bool isNewBucketStarted = 6;
-  bool fetchRecentHistory = 7;
 }
 
+message FetchRecentHistory {
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string bucketName = 2 [(scalapb.field).type = "shared.Domain.BucketName"];
+}

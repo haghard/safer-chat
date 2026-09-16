@@ -14,7 +14,7 @@ import org.apache.pekko.event.LoggingAdapter
 import org.apache.pekko.stream.*
 import org.apache.pekko.stream.scaladsl.*
 import server.grpc.*
-import server.grpc.chat.ServerCmd
+import server.grpc.chat.*
 
 import scala.collection.mutable
 import scala.concurrent.{ ExecutionContext, Future }
@@ -24,7 +24,7 @@ import scala.util.{ Failure, Success }
 
 object ChatSessionExtension extends ExtensionId[ChatSessionExtension] with ExtensionIdProvider {
 
-  given tsOrd: scala.math.Ordering[ServerCmd] = (x: ServerCmd, y: ServerCmd) =>
+  given tsOrd: scala.math.Ordering[LiveServerMessage] = (x: LiveServerMessage, y: LiveServerMessage) =>
     x.timeUuid.toUnixTs().compareTo(y.timeUuid.toUnixTs())
 
   override def get(system: ActorSystem): ChatSessionExtension = super.get(system)
@@ -61,7 +61,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
   )
 
   private def writeSingleMsg(
-      cmd: ServerCmd
+      cmd: LiveServerMessage
     )(using
       cqlSession: CqlSession,
       writeMsgStmt: PreparedStatement,
@@ -112,7 +112,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
   }
 
   private def writeSinglePartitionBatch(
-      cmds: mutable.SortedSet[ServerCmd]
+      cmds: mutable.SortedSet[LiveServerMessage]
     )(using
       cqlSession: CqlSession,
       ps: PreparedStatement,
@@ -165,7 +165,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
     */
   private def sharedChatSessionsSink(
       clusterMemberDetails: String
-    ): (Sink[ServerCmd, NotUsed], KillSwitch) = {
+    ): (Sink[LiveServerMessage, NotUsed], KillSwitch) = {
 
     given PreparedStatement = cqlSession.prepare(
       SimpleStatement
@@ -176,7 +176,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
 
     // keeps consuming from the receive-buffer and aggregate state in memory
     MergeHub
-      .source[ServerCmd](perProducerBufferSize = 1)
+      .source[LiveServerMessage](perProducerBufferSize = 1)
       // .log("cassandra-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}")(logger)
       .buffer(maxBatchSize, OverflowStrategy.backpressure)
       .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
@@ -196,7 +196,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
         )
       )
       .to(
-        Sink.foreachAsync(1) { (messages: Seq[ServerCmd]) =>
+        Sink.foreachAsync(1) { (messages: Seq[LiveServerMessage]) =>
           // It's safe to use Future.traverse here because `maxBatchSize` restricts max parallelism level.
           Future
             .traverse(messages.groupBy(_.chat.raw()).values) { batchPerChat =>

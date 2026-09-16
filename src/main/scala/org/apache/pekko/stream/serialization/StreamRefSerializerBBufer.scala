@@ -6,16 +6,15 @@ package org.apache.pekko.stream.serialization
 
 import scala.util.Using
 import scala.util.Using.Releasable
-
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
-
 import org.apache.pekko.actor.ExtendedActorSystem
 import org.apache.pekko.cluster.ddata.protobuf.SerializationSupport
 import org.apache.pekko.protobufv3.internal.*
 import org.apache.pekko.serialization.*
 import org.apache.pekko.stream.StreamRefMessages
 import org.apache.pekko.stream.impl.streamref.*
+import server.grpc.chat.ServerCmdMessage.SealedValue
 
 /*
 org.apache.pekko.stream.serialization.StreamRefSerializerUdp
@@ -140,27 +139,16 @@ final class StreamRefSerializerBBufer(val system: ExtendedActorSystem)
 
     // logger.info(s"next(${o.getSeqNr}, ${payload.getSerializerId}, ${o.getSerializedSize} bts)")
     // println(s"next(${o.getSeqNr()}, ${payload.getSerializerId()},${o.getSerializedSize()} bts)")
-
     payload.getSerializerId() match {
       case 0 =>
-        StreamRefsProtocol.SequencedOnNext(o.getSeqNr, ClientCmd.parseFrom(bytes))
-      case 1 =>
-        StreamRefsProtocol.SequencedOnNext(o.getSeqNr, ServerCmd.parseFrom(bytes))
+        StreamRefsProtocol.SequencedOnNext(o.getSeqNr, LiveClientMessage.parseFrom(bytes))
+      case 11 =>
+        StreamRefsProtocol.SequencedOnNext(o.getSeqNr, LiveServerMessage.parseFrom(bytes))
+      case 12 =>
+        StreamRefsProtocol.SequencedOnNext(o.getSeqNr, FetchRecentHistory.parseFrom(bytes))
       case n =>
         throw new UnsupportedOperationException(s"Unsupported fromBinary custom-ser-id($n) !")
     }
-
-    /*
-    if (manifest == server.grpc.chat.ClientCmd.scalaDescriptor.fullName) {
-      val payload = server.grpc.chat.ClientCmd.parseFrom(bytes)
-      StreamRefsProtocol.SequencedOnNext(o.getSeqNr, payload)
-    } else if (manifest == server.grpc.chat.ServerCmd.scalaDescriptor.fullName) {
-      val payload = server.grpc.chat.ServerCmd.parseFrom(bytes)
-      StreamRefsProtocol.SequencedOnNext(o.getSeqNr, payload)
-    } else {
-      throw new UnsupportedOperationException(s"Unsupported fromBinary($manifest) !")
-    }
-     */
   }
 
   def deserializeOnSubscribeHandshake(bytes: ByteBuffer): StreamRefsProtocol.OnSubscribeHandshake = {
@@ -218,16 +206,26 @@ final class StreamRefSerializerBBufer(val system: ExtendedActorSystem)
     val pb = StreamRefMessages.Payload.newBuilder()
     val payload =
       o.payload match {
-        case c: server.grpc.chat.ClientCmd =>
+        case c: server.grpc.chat.LiveClientMessage =>
           pb
             .setEnclosedMessage(UnsafeByteOperations.unsafeWrap(c.toByteArray))
-            .setSerializerId(0) // ClientCmd
+            .setSerializerId(0)
             .build()
         case c: server.grpc.chat.ServerCmd =>
-          pb
-            .setEnclosedMessage(UnsafeByteOperations.unsafeWrap(c.toByteArray))
-            .setSerializerId(1) // ServerCmd
-            .build()
+          c.asMessage.sealedValue match {
+            case SealedValue.LiveServerMessage(v) =>
+              pb
+                .setEnclosedMessage(UnsafeByteOperations.unsafeWrap(v.toByteArray))
+                .setSerializerId(11)
+                .build()
+            case SealedValue.FetchRecentHistory(v) =>
+              pb
+                .setEnclosedMessage(UnsafeByteOperations.unsafeWrap(v.toByteArray))
+                .setSerializerId(12)
+                .build()
+            case SealedValue.Empty =>
+              throw new Exception("server.grpc.chat.ServerCmdMessage.SealedValue.Empty")
+          }
       }
 
     StreamRefMessages

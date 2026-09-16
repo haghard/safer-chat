@@ -17,7 +17,7 @@ import org.apache.pekko.actor.typed.scaladsl.adapter.ClassicActorSystemOps
 import org.apache.pekko.persistence.state.scaladsl.GetObjectResult
 import org.apache.pekko.stream.*
 import org.apache.pekko.stream.scaladsl.*
-import server.grpc.chat.ServerCmd
+import server.grpc.chat.{ LiveServerMessage, ServerCmd }
 import server.grpc.state.ChatState
 import shared.Domain.*
 
@@ -67,22 +67,23 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
 
   type WriteOp = (Long, CdcEnvelopeMessage.SealedValue)
 
+  val sessionExt = CassandraSessionExtension(system)
+
   given system0: org.apache.pekko.actor.typed.ActorSystem[?] = system.toTyped
 
   given ExecutionContext = system0.executionContext
 
   given ActorRefResolver = ActorRefResolver(system0)
 
-  given Ordering[ServerCmd] = Ordering.by[ServerCmd, Long](_.timeUuid.toUnixTs())
+  given Ordering[LiveServerMessage] = Ordering.by[LiveServerMessage, Long](_.timeUuid.toUnixTs())
 
-  val casExt = CassandraSessionExtension(system)
+  given cqlSession: CqlSession = sessionExt.cqlSession
 
-  given cqlSession: CqlSession = casExt.cqlSession
-
-  val cntr: Counter = casExt.metricRegistry.counter(CassandraSessionExtension.cntName)
+  val cntr: Counter = sessionExt.metricRegistry.counter(CassandraSessionExtension.cntName)
 
   private val parallelism = system.settings.config.getInt("cassandra.parallelism")
   private val maxBatchSize = system.settings.config.getInt("cassandra.max-batch-size")
+  private val numOfBuckets = system.settings.config.getInt("cassandra.num-of-buckets")
   private val clusterMemberDetails = Cluster(system).selfMember.clusterMemberDetails()
 
   val getChatDetailsStmt: PreparedStatement =
@@ -119,28 +120,28 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
     readChatStateQueueImpl(getChatDetailsStmt, clusterMemberDetails)
 
   val readQueue =
-    readHistoryQueue(clusterMemberDetails)
+    readHistoryQueue(clusterMemberDetails, numOfBuckets)
 
   private def getRecentHistory(
       bs: BoundStatement
     )(using
       cqlSession: CqlSession
-    ): Future[Seq[ServerCmd]] =
+    ): Future[Seq[LiveServerMessage]] =
     cqlSession
       .executeAsync(bs)
       .asScala
       .map { asyncResultSet =>
-        var mostRecentMsgs = List.empty[ServerCmd]
+        var mostRecentMsgs = List.empty[LiveServerMessage]
         val sb = new StringBuilder()
         val iter = asyncResultSet.currentPage().iterator()
         while iter.hasNext() do {
           val row = iter.next()
           val timeuud = row.getUuid(1)
           val ts = unixTimestamp(timeuud)
-          val cmd = ServerCmd.parseFrom(row.getByteBuffer(2).array())
-          mostRecentMsgs = cmd :: mostRecentMsgs
+          val msg = LiveServerMessage.parseFrom(row.getByteBuffer(2).array())
+          mostRecentMsgs = msg :: mostRecentMsgs
           sb.append(
-            s"$timeuud / $ts / ${cmd.userInfo.user.raw()} / ${formatter
+            s"$timeuud / $ts / ${msg.userInfo.user.raw()} / ${formatter
                 .format(ZonedDateTime.ofInstant(Instant.ofEpochMilli(ts), SERVER_DEFAULT_TZ))}"
           ).append("\n")
         }
@@ -170,10 +171,10 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
 
   def fetchRecentHistory(
       bucketNames: List[String],
-      recentHistory: SortedSet[ServerCmd],
+      recentHistory: SortedSet[LiveServerMessage],
       chat: String,
       pageSize: Int,
-    ): Future[Seq[ServerCmd]] =
+    ): Future[Seq[LiveServerMessage]] =
     bucketNames match {
       case bucketName :: othersBucketNames =>
         getRecentHistory(getRecentHistStmt.bind(chat, bucketName, pageSize).setPageSize(pageSize)).flatMap { rows =>
@@ -189,8 +190,8 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
 
   def readHistoryQueue(
       cDetails: String,
+      numOfBucket: Int,
       pageSize: Int = 15,
-      numOfBucket: Int = 3,
     ): SourceQueueWithComplete[(CassandraCmd, Promise[?])] =
     Source
       .queue[(CassandraCmd, Promise[?])](maxBatchSize * 2, OverflowStrategy.backpressure)
@@ -203,7 +204,7 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
           case SealedValue.GetLastBucket(c) =>
             val f =
               getBucketNames(getLastNBucketsStmt.bind(c.chat.raw(), numOfBucket)).flatMap { bucketNames =>
-                fetchRecentHistory(bucketNames, SortedSet.empty[ServerCmd], c.chat.raw(), pageSize).map { rows =>
+                fetchRecentHistory(bucketNames, SortedSet.empty[LiveServerMessage], c.chat.raw(), pageSize).map { rows =>
                   (bucketNames.headOption.getOrElse(""), rows)
                 }
               }
@@ -216,7 +217,7 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
               getRecentHistory(getRecentHistStmt.bind(c.chat.raw(), c.bucketName, pageSize)).flatMap { rows =>
                 if (rows.size < pageSize) {
                   getBucketNames(getLastNBucketsStmt.bind(c.chat.raw(), numOfBucket)).flatMap { bucketNames =>
-                    fetchRecentHistory(bucketNames, SortedSet.empty[ServerCmd], c.chat.raw(), pageSize)
+                    fetchRecentHistory(bucketNames, SortedSet.empty[LiveServerMessage], c.chat.raw(), pageSize)
                   }
                 } else
                   Future.successful(rows)

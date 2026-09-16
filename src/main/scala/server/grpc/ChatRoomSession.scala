@@ -46,7 +46,7 @@ object ChatRoomSession {
     }
 
   final case class ChatRoomHub(
-      sink: Sink[ClientCmd, NotUsed],
+      sink: Sink[LiveClientMessage, NotUsed],
       src: Source[ServerCmd, NotUsed])
 
   final case class ChatRoomState(
@@ -95,20 +95,20 @@ object ChatRoomSession {
 
         val ((sink, ks), src) =
           MergeHub
-            .source[ClientCmd](perProducerBufferSize = 1)
+            .source[LiveClientMessage](perProducerBufferSize = 1)
             .mapMaterializedValue { sink =>
               ctx.log.info(s"MergeHub(${ctx.self.path.toString})")
               sink
             }
             .map(clientCmd =>
-              ServerCmd(
+              LiveServerMessage(
                 clientCmd.chat,
                 clientCmd.content,
                 clientCmd.userInfo,
                 CassandraTimeUUID(Uuids.timeBased().toString),
               )
             )
-            .scan[(String, Option[ServerCmd])]((lastSeenBucket, None)) {
+            .scan[(String, Option[LiveServerMessage])]((lastSeenBucket, None)) {
               case ((lastSeenBucket, lastCmd), cmd) =>
                 val ts = cmd.timeUuid.toUnixTs()
                 val currentBucket = CassandraStore
@@ -127,7 +127,7 @@ object ChatRoomSession {
             .viaMat(KillSwitches.single)(Keep.both)
             .toMat(
               BroadcastHub
-                .sink[ServerCmd](bufferSize = 1)
+                .sink[LiveServerMessage](bufferSize = 1)
                 .mapMaterializedValue { src =>
                   ctx.log.info(s"BroadcastHub(${ctx.self.path.toString})")
                   src
@@ -141,8 +141,8 @@ object ChatRoomSession {
         val chatRoomHub = ChatRoomHub(sink, src)
         val srcRef: SourceRef[ServerCmd] =
           (Source(recentHistory) ++ chatRoomHub.src).runWith(StreamRefs.sourceRef[ServerCmd]())
-        val sinkRef: SinkRef[ClientCmd] =
-          chatRoomHub.sink.runWith(StreamRefs.sinkRef[ClientCmd]())
+        val sinkRef: SinkRef[LiveClientMessage] =
+          chatRoomHub.sink.runWith(StreamRefs.sinkRef[LiveClientMessage]())
 
         refReplyTo.tell(
           ChatReply(
@@ -202,20 +202,16 @@ object ChatRoomSession {
               .formatterMM
               .format(ZonedDateTime.ofInstant(Instant.ofEpochMilli(nowTs.toUnixTs()), CassandraStore.UTC))
 
-            val getRecentHistory =
-              ServerCmd(
-                chatName,
-                fetchRecentHistory = true,
-                bucketName = BucketName(currentBucket),
-              )
+            // LiveClientMessage, LiveServerMessage
 
             // Option1: Send getRecentHistory to all clients
             // Source.single(ClientCmd(chat = chatName, userInfo = UserInfo(user = user))).runWith(hub.sink)
             // val srcRef = hub.src.runWith(StreamRefs.sourceRef[ServerCmd]())
 
             // Option2: Send getRecentHistory  only for this client
-            val srcRef = (Source.single(getRecentHistory) ++ hub.src).runWith(StreamRefs.sourceRef[ServerCmd]())
-            val sinkRef = hub.sink.runWith(StreamRefs.sinkRef[ClientCmd]())
+            val srcRef = (Source.single(FetchRecentHistory(chatName, BucketName(currentBucket))) ++ hub.src)
+              .runWith(StreamRefs.sourceRef[ServerCmd]())
+            val sinkRef = hub.sink.runWith(StreamRefs.sinkRef[LiveClientMessage]())
             refReplyTo.tell(
               ChatReply(
                 chat = chatName,

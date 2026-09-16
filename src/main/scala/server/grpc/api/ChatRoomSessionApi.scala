@@ -24,6 +24,7 @@ import org.apache.pekko.cassandra.{ ChatRoomExtension, ExpiringPromise }
 import org.apache.pekko.cassandra.CassandraSessionExtension
 import server.grpc.api.ChatRoomSessionApi.ChatError
 import server.grpc.chat.*
+import server.grpc.chat.ServerCmdMessage.SealedValue
 import shared.Domain.*
 import shared.AppConfig
 
@@ -50,7 +51,7 @@ final class ChatRoomSessionApi(
 
   val recentHistoryQueue = ChatRoomExtension(system).readQueue
 
-  def post(in: Source[ClientCmd, NotUsed]): Source[ServerCmd, NotUsed] =
+  def post(in: Source[LiveClientMessage, NotUsed]): Source[LiveServerMessage, NotUsed] =
     in.prefixAndTail(1).flatMapConcat {
       case (Seq(authMsg), source) =>
         Source
@@ -65,9 +66,9 @@ final class ChatRoomSessionApi(
     }
 
   def postFlow(
-      authMsg: ClientCmd,
+      authMsg: LiveClientMessage,
       user: Participant,
-    ): Flow[ClientCmd, ServerCmd, NotUsed] =
+    ): Flow[LiveClientMessage, LiveServerMessage, NotUsed] =
     RestartFlow
       .withBackoff(
         stream
@@ -80,8 +81,8 @@ final class ChatRoomSessionApi(
       chat: ChatName,
       user: Participant,
       otp: Otp,
-      source: Source[ClientCmd, NotUsed],
-    ): Future[Source[ClientCmd, NotUsed]] =
+      source: Source[LiveClientMessage, NotUsed],
+    ): Future[Source[LiveClientMessage, NotUsed]] =
     chatRoomRegion
       .ask[ChatReply](replyTo => AuthUser(chat, user, otp, ReplyTo[ChatReply].toCustom(replyTo)))
       .map { reply =>
@@ -97,9 +98,9 @@ final class ChatRoomSessionApi(
 
   def chatRoomFlow(
       chatRoomSessionRegion: ActorRef[ChatRoomCmd],
-      authMsg: ClientCmd,
+      authMsg: LiveClientMessage,
       user: Participant,
-    ): Future[Flow[ClientCmd, ServerCmd, NotUsed]] =
+    ): Future[Flow[LiveClientMessage, LiveServerMessage, NotUsed]] =
     chatRoomSessionRegion
       .ask[ChatReply](replyTo => ConnectRequest(authMsg.chat, user, authMsg.otp, ReplyTo[ChatReply].toCustom(replyTo)))
       .map { reply =>
@@ -108,8 +109,8 @@ final class ChatRoomSessionApi(
             val srcRef: SourceRef[ServerCmd] =
               streamRefsResolver.resolveSourceRef[ServerCmd](reply.sourceRefStr)
 
-            val sinkRef: SinkRef[ClientCmd] =
-              streamRefsResolver.resolveSinkRef[ClientCmd](reply.sinkRefStr)
+            val sinkRef: SinkRef[LiveClientMessage] =
+              streamRefsResolver.resolveSinkRef[LiveClientMessage](reply.sinkRefStr)
 
             Flow
               .fromSinkAndSourceCoupled(
@@ -117,7 +118,24 @@ final class ChatRoomSessionApi(
                 srcRef
                   .source
                   .mapAsync(1) { cmd =>
-                    if (cmd.fetchRecentHistory) {
+                    cmd.asMessage.sealedValue match {
+                      case SealedValue.LiveServerMessage(msg) =>
+                        Future.successful(Seq(msg))
+                      case SealedValue.FetchRecentHistory(msg) =>
+                        val p = ExpiringPromise[Seq[LiveServerMessage]](failoverTo.duration)
+                        recentHistoryQueue.offer((GetRecentHistory(msg.chat, msg.bucketName), p)).flatMap {
+                          case QueueOfferResult.Enqueued =>
+                            p.future
+                          case QueueOfferResult.Dropped =>
+                            logger.warn("read-queue overflow")
+                            Future.failed(new Exception("Read overflow"))
+                          case result: QueueCompletionResult =>
+                            Future.failed(new Exception("Unexpected QueueOfferResult"))
+                        }
+                      case SealedValue.Empty =>
+                        Future.failed(new Exception("Empty"))
+                    }
+                    /*if (cmd.fetchRecentHistory) {
                       val p = ExpiringPromise[Seq[ServerCmd]](failoverTo.duration)
                       recentHistoryQueue.offer((GetRecentHistory(cmd.chat, cmd.bucketName), p)).flatMap {
                         case QueueOfferResult.Enqueued =>
@@ -129,7 +147,7 @@ final class ChatRoomSessionApi(
                           Future.failed(new Exception("Unexpected"))
                       }
                     } else
-                      Future.successful(Seq(cmd))
+                      Future.successful(Seq(cmd))*/
                   }
                   .mapConcat(identity)
                   .map { msg =>

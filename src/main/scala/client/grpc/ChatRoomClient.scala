@@ -20,7 +20,7 @@ import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.grpc.GrpcClientSettings
 import org.apache.pekko.stream.scaladsl.Source
-import server.grpc.chat.{ ClientCmd, ServerCmd, UserInfo }
+import server.grpc.chat.{ LiveClientMessage, LiveServerMessage, UserInfo }
 import org.apache.pekko.cassandra.CassandraStore.*
 import scala.util.control.NonFatal
 import _root_.shared.*
@@ -82,10 +82,10 @@ object ChatRoomClient {
     val otp = TOTPGen.now()
 
     val coords = server.grpc.chat.Coords(43.911806, -80.099738)
-    val requests: Source[ClientCmd, NotUsed] =
+    val requests: Source[LiveClientMessage, NotUsed] =
       // auth message
       Source.single(
-        ClientCmd(
+        LiveClientMessage(
           chatName,
           Map.empty,
           UserInfo(
@@ -112,7 +112,7 @@ object ChatRoomClient {
               // .zip()
             }
 
-            val cmd = ClientCmd(
+            val cmd = LiveClientMessage(
               chatName,
               content,
               UserInfo(
@@ -126,7 +126,7 @@ object ChatRoomClient {
           }
           .mapMaterializedValue(_ => NotUsed)
 
-    val responseStream: Source[ServerCmd, NotUsed] =
+    val responseStream: Source[LiveServerMessage, NotUsed] =
       client.post(requests)
 
     val done: Future[Done] =
@@ -136,7 +136,7 @@ object ChatRoomClient {
   }
 
   def onMsg(
-      serverCmd: ServerCmd,
+      serverCmd: LiveServerMessage,
       user: ChatUser,
       default: ChatUser,
       userPubKeys: java.util.concurrent.ConcurrentHashMap[String, java.security.interfaces.RSAPublicKey],
