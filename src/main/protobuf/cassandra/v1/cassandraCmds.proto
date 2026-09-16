@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+import "scalapb/scalapb.proto";
+
+option java_multiple_files = true;
+
+package com.domain.chat.session.cassandra.commands;
+
+option (scalapb.options) = {
+  scope: PACKAGE
+  flat_package: true
+  lenses: true
+  enum_value_naming: CAMEL_CASE
+  enum_strip_prefix: true
+  preserve_unknown_fields: false
+  scala3_sources: true
+};
+
+message CassandraCmd {
+
+  oneof sealed_value {
+    GetRecentHistory getRecentHistory = 1;
+    GetLatestBucketName getLastBucket = 2;
+  }
+}
+
+message GetRecentHistory {
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string bucketName = 2 [(scalapb.field).type = "shared.Domain.BucketName"];
+}
+
+message GetLatestBucketName {
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+}
