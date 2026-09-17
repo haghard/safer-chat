@@ -50,7 +50,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
 
   given cqlSession: CqlSession = CassandraSessionExtension(system).cqlSession
 
-  // A shared sink that write to Cassandra to be used by all local to this node grpc connections.
+  // This provides a shared sink that writes to Cassandra, used by all node-local gRPC connections.
   val chatSessionSharedSink = sharedChatSessionsSink(cDetails)
 
   val writeBuckets: PreparedStatement = cqlSession.prepare(
@@ -187,7 +187,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
         )
       )
       .viaMat(KillSwitches.single)(Keep.both)
-      .groupedWithin(maxBatchSize, 300.millis) // It caps write latency at 50 ms.
+      .groupedWithin(maxBatchSize, 50.millis) // It caps write latency at 50 ms.
       // .wireTap(printStats("CassandraSink.stats:", 30.seconds))
       .via(
         ThroughputMonitor(
