@@ -165,7 +165,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
     */
   private def sharedChatSessionsSink(
       clusterMemberDetails: String
-    ): (Sink[LiveServerMessage, NotUsed], KillSwitch) = {
+    ): (Sink[ServerCmd, NotUsed], KillSwitch) = {
 
     given PreparedStatement = cqlSession.prepare(
       SimpleStatement
@@ -176,10 +176,11 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
 
     // keeps consuming from the receive-buffer and aggregate state in memory
     MergeHub
-      .source[LiveServerMessage](perProducerBufferSize = 1)
+      .source[ServerCmd](perProducerBufferSize = 1)
       // .log("cassandra-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}")(logger)
       .buffer(maxBatchSize, OverflowStrategy.backpressure)
       .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
+      .collect { case msg: LiveServerMessage => msg }
       .via(
         StreamMonitor(
           "c*-merge-hub",

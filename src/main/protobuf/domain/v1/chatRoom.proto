@@ -38,11 +38,18 @@ message Disconnect {
   string otp = 3 [(scalapb.field).type = "shared.Domain.Otp"];
 }
 
-message LastSeenBucket {
+message RecentHistoryResult {
   option (scalapb.message).extends = "ChatRoomCmd";
   string bucketName = 1;
   string chat = 2 [(scalapb.field).type = "shared.Domain.ChatName"];
   string user = 3 [(scalapb.field).type = "shared.Domain.Participant"];
-  repeated server.grpc.chat.ServerCmd recentHistory = 4;
+  repeated server.grpc.chat.LiveServerMessage messages = 4;
   string replyTo = 5 [(scalapb.field).type = "shared.Domain.ReplyTo"];
+}
+
+message RequestRecentHistory {
+  option (scalapb.message).extends = "ChatRoomCmd";
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
+  string replyTo = 3 [(scalapb.field).type = "shared.Domain.ReplyTo"];
 }

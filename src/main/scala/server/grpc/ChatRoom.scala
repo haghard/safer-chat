@@ -178,7 +178,6 @@ object ChatRoom {
                 Effect
                   .reply(refReplyTo)(ChatReply(chat, ChatReply.StatusCode.AuthorizationError))
               }
-              // }
             } else {
               Effect.reply(refReplyTo)(ChatReply(chat, ChatReply.StatusCode.UnknownUser))
             }

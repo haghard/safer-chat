@@ -27,7 +27,7 @@ val ProjectName = "safer-chat"
 //https://repo1.maven.org/maven2/com/lihaoyi/ammonite_3.8.1/3.0.9/
 val AmmoniteVersion = "3.0.9"
 
-val AppVersion = "0.4.0"
+val AppVersion = "0.5.0"
 
 resolvers ++= Seq("Apache Snapshots" at "https://repository.apache.org/content/repositories/snapshots/")
 
@@ -365,9 +365,9 @@ val unnamedJavaOptions = List(
 
 //sbt asm
 
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC -Xmx128m -jar ./target/scala-3.9.0/safer-chat-0.4.0.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.1 -Dpekko.management.http.hostname=127.0.0.1 -Dpekko.cluster.multi-data-center.self-data-center=chat-DC -Xmx128m -jar ./target/scala-3.9.0/safer-chat-0.5.0.jar
 
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 -Dpekko.cluster.multi-data-center.self-data-center=session-DC -Xmx256m -jar ./target/scala-3.9.0/safer-chat-0.4.0.jar
-//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.3 -Dpekko.management.http.hostname=127.0.0.3 -Dpekko.cluster.multi-data-center.self-data-center=session-DC -Xmx256m -jar ./target/scala-3.9.0/safer-chat-0.4.0.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.2 -Dpekko.management.http.hostname=127.0.0.2 -Dpekko.cluster.multi-data-center.self-data-center=session-DC -Xmx256m -jar ./target/scala-3.9.0/safer-chat-0.5.0.jar
+//java --add-opens java.base/sun.nio.ch=ALL-UNNAMED -Dpekko.remote.artery.canonical.hostname=127.0.0.3 -Dpekko.management.http.hostname=127.0.0.3 -Dpekko.cluster.multi-data-center.self-data-center=session-DC -Xmx256m -jar ./target/scala-3.9.0/safer-chat-0.5.0.jar
 //show dependencyList
 

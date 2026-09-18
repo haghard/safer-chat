@@ -23,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap
 import cluster.sharding.typed.ShardingMessageExtractor
 import com.domain.chat.session.cassandra.commands.CassandraCmd
 import org.apache.pekko.cassandra.*
+import server.grpc.chat.ServerCmdMessage.SealedValue
 
 import java.time.{ Instant, ZonedDateTime }
 import scala.concurrent.duration.DurationInt
@@ -32,6 +33,32 @@ import scala.util.{ Failure, Success }
 object ChatRoomSession {
 
   val TypeKey = EntityTypeKey[ChatRoomCmd]("session")
+
+  case class SessionState[T: scala.reflect.ClassTag] private (
+      buffer: RingBuffer[T],
+      lastSeenBucket: String,
+      isRequestedBy: Option[Participant]) {
+
+    def this(capacity: Int, lastSeenBucket: String) =
+      this(new RingBuffer[T](capacity), lastSeenBucket, None)
+
+    def fetchRequested(user: Participant): SessionState[T] =
+      copy(isRequestedBy = Some(user))
+
+    def add(element: T): SessionState[T] = {
+      buffer.add(element)
+      copy(isRequestedBy = None)
+    }
+
+    def add(bucket: String, element: T): SessionState[T] = {
+      buffer.add(element)
+      copy(isRequestedBy = None, lastSeenBucket = bucket)
+    }
+
+    def messages() = buffer.messages()
+
+    def mostRecent() = buffer.mostRecent()
+  }
 
   def shardingMessageExtractor(numberOfShards: Int): ShardingMessageExtractor[ChatRoomCmd, ChatRoomCmd] =
     new ShardingMessageExtractor[ChatRoomCmd, ChatRoomCmd] {
@@ -53,7 +80,8 @@ object ChatRoomSession {
       chatName: ChatName,
       onlineUsers: HashSet[Participant] = HashSet.empty[Participant],
       ks: Option[KillSwitch] = None,
-      maybeHub: Option[ChatRoomHub] = None)
+      chatRoomHub: Option[ChatRoomHub] = None,
+      recentHistoryRequestQueue: Option[SourceQueueWithComplete[ServerCmd]] = None)
 
   def apply(
       chatName: ChatName,
@@ -84,23 +112,22 @@ object ChatRoomSession {
       sb: StashBuffer[ChatRoomCmd],
     ): Behavior[ChatRoomCmd] =
     Behaviors.receiveMessage[ChatRoomCmd] {
-      case LastSeenBucket(lastSeenBucket, chatName, user, recentHistory, replyTo) =>
+      case RecentHistoryResult(lastSeenBucket, chatName, user, recentMessages, replyTo) =>
         given sys: ActorSystem[?] = ctx.system
 
         val chatName = state.chatName
         val refReplyTo = ReplyTo[ChatReply].toBase(replyTo)
 
         val (chatRoomSessionsSink, ks0) = ChatSessionExtension(ctx.system).chatSessionSharedSink
-        kss.putIfAbsent(ChatName("names"), ks0)
+        kss.putIfAbsent(ChatName("session-sinks"), ks0)
 
-        val ((sink, ks), src) =
+        val sessionState = new SessionState[LiveServerMessage](1 << 4, lastSeenBucket)
+        recentMessages.foreach(sessionState.add)
+
+        val (((sink, recentHistoryRequestQueue), ks), src) =
           MergeHub
             .source[LiveClientMessage](perProducerBufferSize = 1)
-            .mapMaterializedValue { sink =>
-              ctx.log.info(s"MergeHub(${ctx.self.path.toString})")
-              sink
-            }
-            .map(clientCmd =>
+            .map[ServerCmd](clientCmd =>
               LiveServerMessage(
                 clientCmd.chat,
                 clientCmd.content,
@@ -108,41 +135,56 @@ object ChatRoomSession {
                 CassandraTimeUUID(Uuids.timeBased().toString),
               )
             )
-            .scan[(String, Option[LiveServerMessage])]((lastSeenBucket, None)) {
-              case ((lastSeenBucket, lastCmd), cmd) =>
-                val ts = cmd.timeUuid.toUnixTs()
-                val currentBucket = CassandraStore
-                  .formatterMM
-                  .format(ZonedDateTime.ofInstant(Instant.ofEpochMilli(ts), CassandraStore.UTC))
-                if (lastSeenBucket != currentBucket)
-                  (currentBucket, Some(cmd.withBucketName(BucketName(currentBucket)).withIsNewBucketStarted(true)))
-                else
-                  (currentBucket, Some(cmd.withBucketName(BucketName(currentBucket))))
-            }
-            .collect { case (currentBucket, Some(cmd)) => cmd }
-            // .log(s"$chatName.hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}")(sys.toClassic.log)
-            // .via(StreamMonitor(s"$chatName.grpc-hub", cmd => s"${cmd.chat.raw()}.${cmd.timeUuid.toUnixTs()}"))
-            .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
-            .alsoTo(chatRoomSessionsSink)
-            .viaMat(KillSwitches.single)(Keep.both)
-            .toMat(
-              BroadcastHub
-                .sink[LiveServerMessage](bufferSize = 1)
-                .mapMaterializedValue { src =>
-                  ctx.log.info(s"BroadcastHub(${ctx.self.path.toString})")
-                  src
+            .mergeMat(Source.queue[ServerCmd](64, OverflowStrategy.backpressure))(Keep.both)
+            .scan(sessionState) {
+              case (sessionState, cmd) =>
+                cmd.asMessage.sealedValue match {
+                  case SealedValue.LiveServerMessage(cmd) =>
+                    val ts = cmd.timeUuid.toUnixTs()
+                    val currentBucket = CassandraStore
+                      .formatterMM
+                      .format(ZonedDateTime.ofInstant(Instant.ofEpochMilli(ts), CassandraStore.UTC))
+
+                    if (sessionState.lastSeenBucket != currentBucket)
+                      sessionState.add(
+                        currentBucket,
+                        cmd.withBucketName(BucketName(currentBucket)).withIsNewBucketStarted(true),
+                      )
+                    else
+                      sessionState.add(cmd.withBucketName(BucketName(currentBucket)))
+
+                  case SealedValue.FlushRecentHistory(cmd) =>
+                    sessionState.fetchRequested(cmd.user)
+                  case SealedValue.RecentHistoryMessage(_) =>
+                    sessionState
+                  case SealedValue.Empty =>
+                    sessionState
                 }
-            )(Keep.both)
-            // .addAttributes(stream.ActorAttributes.supervisionStrategy { case NonFatal(ex) =>  stream.Supervision.Resume })
+            }
+            .map { state =>
+              state.isRequestedBy match {
+                case Some(user) =>
+                  RecentHistoryMessage(user, state.messages())
+                case None =>
+                  state.mostRecent()
+              }
+            }
+            .alsoTo(chatRoomSessionsSink)
+            .withAttributes(Attributes.logLevels(org.apache.pekko.event.Logging.InfoLevel))
+            .viaMat(KillSwitches.single)(Keep.both)
+            .toMat(BroadcastHub.sink[ServerCmd](bufferSize = 1))(Keep.both)
             .run()
 
         kss.put(chatName, ks)
-
         val chatRoomHub = ChatRoomHub(sink, src)
+
+        val settings = StreamRefAttributes
+          .subscriptionTimeout(2.seconds)
+          .and(org.apache.pekko.stream.Attributes.inputBuffer(4, 4))
         val srcRef: SourceRef[ServerCmd] =
-          (Source(recentHistory) ++ chatRoomHub.src).runWith(StreamRefs.sourceRef[ServerCmd]())
+          chatRoomHub.src.runWith(StreamRefs.sourceRef[ServerCmd]().withAttributes(settings))
         val sinkRef: SinkRef[LiveClientMessage] =
-          chatRoomHub.sink.runWith(StreamRefs.sinkRef[LiveClientMessage]())
+          chatRoomHub.sink.runWith(StreamRefs.sinkRef[LiveClientMessage]().withAttributes(settings))
 
         refReplyTo.tell(
           ChatReply(
@@ -158,7 +200,8 @@ object ChatRoomSession {
             state.copy(
               onlineUsers = state.onlineUsers + user,
               ks = Some(ks),
-              maybeHub = Some(chatRoomHub),
+              chatRoomHub = Some(chatRoomHub),
+              recentHistoryRequestQueue = Some(recentHistoryRequestQueue),
             ),
             readQueue,
             kss,
@@ -194,23 +237,9 @@ object ChatRoomSession {
           )
         val refReplyTo = ReplyTo[ChatReply].toBase(replyTo)
         given sys: ActorSystem[?] = ctx.system
-        state.maybeHub match {
+        state.chatRoomHub match {
           case Some(hub) =>
-
-            val nowTs = CassandraTimeUUID(Uuids.timeBased().toString)
-            val currentBucket = CassandraStore
-              .formatterMM
-              .format(ZonedDateTime.ofInstant(Instant.ofEpochMilli(nowTs.toUnixTs()), CassandraStore.UTC))
-
-            // LiveClientMessage, LiveServerMessage
-
-            // Option1: Send getRecentHistory to all clients
-            // Source.single(ClientCmd(chat = chatName, userInfo = UserInfo(user = user))).runWith(hub.sink)
-            // val srcRef = hub.src.runWith(StreamRefs.sourceRef[ServerCmd]())
-
-            // Option2: Send getRecentHistory  only for this client
-            val srcRef = (Source.single(FetchRecentHistory(chatName, BucketName(currentBucket))) ++ hub.src)
-              .runWith(StreamRefs.sourceRef[ServerCmd]())
+            val srcRef = hub.src.runWith(StreamRefs.sourceRef[ServerCmd]())
             val sinkRef = hub.sink.runWith(StreamRefs.sinkRef[LiveClientMessage]())
             refReplyTo.tell(
               ChatReply(
@@ -223,12 +252,12 @@ object ChatRoomSession {
             active(state.copy(onlineUsers = state.onlineUsers + user), readQueue, kss)
 
           case None =>
-            val p = ExpiringPromise[(String, Seq[ServerCmd])](3.seconds)
+            val readP = ExpiringPromise[(String, Seq[LiveServerMessage])](5.seconds)
             val f = readQueue
-              .offer((com.domain.chat.session.cassandra.commands.GetLatestBucketName(state.chatName), p))
+              .offer((com.domain.chat.session.cassandra.commands.GetLatestBucketName(state.chatName), readP))
               .flatMap {
                 case QueueOfferResult.Enqueued =>
-                  p.future
+                  readP.future
                 case QueueOfferResult.Dropped =>
                   Future.failed(new Exception("GetLatestBucketName read overflow"))
                 case result: QueueCompletionResult =>
@@ -237,12 +266,19 @@ object ChatRoomSession {
 
             ctx.pipeToSelf(f) {
               case Success((lastSeenBucket, recent)) =>
-                LastSeenBucket(lastSeenBucket, chatName, user, recent, replyTo)
+                RecentHistoryResult(lastSeenBucket, chatName, user, recent, replyTo)
               case Failure(ex) =>
                 throw new Exception(s"Read last seen bucket error for ${chatName.raw()}")
             }
             await(state, readQueue, kss)
         }
+
+      case RequestRecentHistory(chatName, user, replyTo) =>
+        ctx.log.warn("RequestRecentHistory {}@{}", chatName.raw(), user.raw())
+        // TODO: make sure it is queued up.
+        state.recentHistoryRequestQueue.foreach(_.offer(FlushRecentHistory(chatName, user)))
+        ReplyTo[ChatReply].toBase(replyTo).tell(ChatReply(chat = chatName))
+        Behaviors.same
 
       case Disconnect(user, chatName, otp) =>
         val updatedOnlineUsers = state.onlineUsers - user
@@ -255,7 +291,7 @@ object ChatRoomSession {
           active(state.copy(onlineUsers = updatedOnlineUsers), readQueue, kss)
         }
 
-      case _: com.domain.chatRoom.LastSeenBucket =>
+      case _: com.domain.chatRoom.RecentHistoryResult =>
         Behaviors.same
     }
 }

@@ -145,7 +145,9 @@ final class StreamRefSerializerBBufer(val system: ExtendedActorSystem)
       case 11 =>
         StreamRefsProtocol.SequencedOnNext(o.getSeqNr, LiveServerMessage.parseFrom(bytes))
       case 12 =>
-        StreamRefsProtocol.SequencedOnNext(o.getSeqNr, FetchRecentHistory.parseFrom(bytes))
+        StreamRefsProtocol.SequencedOnNext(o.getSeqNr, FlushRecentHistory.parseFrom(bytes))
+      case 13 =>
+        StreamRefsProtocol.SequencedOnNext(o.getSeqNr, RecentHistoryMessage.parseFrom(bytes))
       case n =>
         throw new UnsupportedOperationException(s"Unsupported fromBinary custom-ser-id($n) !")
     }
@@ -218,10 +220,15 @@ final class StreamRefSerializerBBufer(val system: ExtendedActorSystem)
                 .setEnclosedMessage(UnsafeByteOperations.unsafeWrap(v.toByteArray))
                 .setSerializerId(11)
                 .build()
-            case SealedValue.FetchRecentHistory(v) =>
+            case SealedValue.FlushRecentHistory(v) =>
               pb
                 .setEnclosedMessage(UnsafeByteOperations.unsafeWrap(v.toByteArray))
                 .setSerializerId(12)
+                .build()
+            case SealedValue.RecentHistoryMessage(v) =>
+              pb
+                .setEnclosedMessage(UnsafeByteOperations.unsafeWrap(v.toByteArray))
+                .setSerializerId(13)
                 .build()
             case SealedValue.Empty =>
               throw new Exception("server.grpc.chat.ServerCmdMessage.SealedValue.Empty")

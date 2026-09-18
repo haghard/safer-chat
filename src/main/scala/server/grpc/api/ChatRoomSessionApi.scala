@@ -16,11 +16,10 @@ import org.apache.pekko.stream.*
 import org.apache.pekko.stream.scaladsl.*
 import com.domain.chat.ChatReply.StatusCode
 import com.domain.chat.*
-import com.domain.chat.session.cassandra.commands.GetRecentHistory
 import com.domain.chatRoom.*
 import org.apache.pekko.actor.typed.ActorRefResolver
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.*
-import org.apache.pekko.cassandra.{ ChatRoomExtension, ExpiringPromise }
+import server.grpc.api.ChatRoomSessionApi.refineMsg
 import org.apache.pekko.cassandra.CassandraSessionExtension
 import server.grpc.api.ChatRoomSessionApi.ChatError
 import server.grpc.chat.*
@@ -33,6 +32,30 @@ import scala.util.control.NoStackTrace
 object ChatRoomSessionApi {
 
   final case class ChatError(cause: String) extends Exception(cause) with NoStackTrace
+
+  private def refineMsg(
+      msg: LiveServerMessage,
+      user: Participant,
+      defaultKey: String,
+    )(using logger: Logger
+    ) =
+    msg.content.get(defaultKey) match {
+      case Some(defaultBts) =>
+        msg.content.get(user.raw()) match {
+          case Some(usrMsg) =>
+            /* Here we send back only 2 pairs:
+             * 1. The sender's pub_key along with the encoded content
+             * 2. The default pub_key along with the encoded by that key content. (i.e. encode(pub_key(msg)))
+             */
+            msg.withContent(Map(user.raw() -> usrMsg, defaultKey -> defaultBts))
+          case None =>
+            // Here we send back only 1 pairs
+            msg.withContent(Map(defaultKey -> defaultBts))
+        }
+      case None =>
+        logger.error(s"$user. Default content not found !")
+        msg
+    }
 }
 
 final class ChatRoomSessionApi(
@@ -48,8 +71,6 @@ final class ChatRoomSessionApi(
   given replyToResolver: ActorRefResolver = ActorRefResolver(system)
   given streamRefsResolver: stream.StreamRefResolver = stream.StreamRefResolver(system)
   given cqlSession: CqlSession = CassandraSessionExtension(system).cqlSession
-
-  val recentHistoryQueue = ChatRoomExtension(system).readQueue
 
   def post(in: Source[LiveClientMessage, NotUsed]): Source[LiveServerMessage, NotUsed] =
     in.prefixAndTail(1).flatMapConcat {
@@ -115,57 +136,23 @@ final class ChatRoomSessionApi(
             Flow
               .fromSinkAndSourceCoupled(
                 sinkRef.sink(),
-                srcRef
-                  .source
-                  .mapAsync(1) { cmd =>
-                    cmd.asMessage.sealedValue match {
-                      case SealedValue.LiveServerMessage(msg) =>
-                        Future.successful(Seq(msg))
-                      case SealedValue.FetchRecentHistory(msg) =>
-                        val p = ExpiringPromise[Seq[LiveServerMessage]](failoverTo.duration)
-                        recentHistoryQueue.offer((GetRecentHistory(msg.chat, msg.bucketName), p)).flatMap {
-                          case QueueOfferResult.Enqueued =>
-                            p.future
-                          case QueueOfferResult.Dropped =>
-                            logger.warn("read-queue overflow")
-                            Future.failed(new Exception("Read overflow"))
-                          case result: QueueCompletionResult =>
-                            Future.failed(new Exception("Unexpected QueueOfferResult"))
-                        }
-                      case SealedValue.Empty =>
-                        Future.failed(new Exception("Empty"))
-                    }
-                    /*if (cmd.fetchRecentHistory) {
-                      val p = ExpiringPromise[Seq[ServerCmd]](failoverTo.duration)
-                      recentHistoryQueue.offer((GetRecentHistory(cmd.chat, cmd.bucketName), p)).flatMap {
-                        case QueueOfferResult.Enqueued =>
-                          p.future
-                        case QueueOfferResult.Dropped =>
-                          logger.warn("read-queue overflow")
-                          Future.failed(new Exception("Read overflow"))
-                        case result: QueueCompletionResult =>
-                          Future.failed(new Exception("Unexpected"))
-                      }
-                    } else
-                      Future.successful(Seq(cmd))*/
+                Source
+                  .futureSource {
+                    chatRoomSessionRegion
+                      .ask[ChatReply](replyTo =>
+                        RequestRecentHistory(authMsg.chat, user, ReplyTo[ChatReply].toCustom(replyTo))
+                      )
+                      .map(_ => srcRef.source)
                   }
-                  .mapConcat(identity)
-                  .map { msg =>
-                    msg.content.get(appConf.default) match {
-                      case Some(defaultBts) =>
-                        msg.content.get(user.raw()) match {
-                          case Some(usrMsg) =>
-                            /* We send back only 2 pairs:
-                             * 1. The sender's pub_key + the encoded content
-                             * 2. The default pub_key + the encoded content pub_key(msg)
-                             */
-                            msg.withContent(Map(user.raw() -> usrMsg, appConf.default -> defaultBts))
-                          case None =>
-                            msg.withContent(Map(appConf.default -> defaultBts))
-                        }
-                      case None =>
-                        logger.error(s"$user. Default content not found !")
-                        msg
+                  .mapConcat { cmd =>
+                    cmd.asMessage.sealedValue match {
+                      case SealedValue.RecentHistoryMessage(msg) =>
+                        if (msg.user.raw() == user.raw()) msg.recentHistory.map(refineMsg(_, user, appConf.default))
+                        else Seq.empty
+                      case SealedValue.LiveServerMessage(msg) =>
+                        Seq(refineMsg(msg, user, appConf.default))
+                      case _: SealedValue.FlushRecentHistory | SealedValue.Empty =>
+                        Seq.empty
                     }
                   },
               )

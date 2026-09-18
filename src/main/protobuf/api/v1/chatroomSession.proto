@@ -36,8 +36,9 @@ message ServerCmd {
   oneof sealed_value {
     LiveServerMessage liveServerMessage = 1;
 
-    //internal cmd
-    FetchRecentHistory fetchRecentHistory = 2;
+    //internal cmds
+    FlushRecentHistory flushRecentHistory = 2;
+    RecentHistoryMessage recentHistoryMessage = 3;
   }
 }
 
@@ -50,7 +51,12 @@ message LiveServerMessage {
   bool isNewBucketStarted = 6;
 }
 
-message FetchRecentHistory {
+message RecentHistoryMessage {
+  string user = 1 [(scalapb.field).type = "shared.Domain.Participant"];
+  repeated LiveServerMessage recentHistory = 2;
+}
+
+message FlushRecentHistory {
   string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
-  string bucketName = 2 [(scalapb.field).type = "shared.Domain.BucketName"];
+  string user = 2 [(scalapb.field).type = "shared.Domain.Participant"];
 }
