@@ -34,32 +34,6 @@ object ChatRoomSession {
 
   val TypeKey = EntityTypeKey[ChatRoomCmd]("session")
 
-  case class SessionState[T: scala.reflect.ClassTag] private (
-      buffer: RingBuffer[T],
-      lastSeenBucket: String,
-      isRequestedBy: Option[Participant]) {
-
-    def this(capacity: Int, lastSeenBucket: String) =
-      this(new RingBuffer[T](capacity), lastSeenBucket, None)
-
-    def fetchRequested(user: Participant): SessionState[T] =
-      copy(isRequestedBy = Some(user))
-
-    def add(element: T): SessionState[T] = {
-      buffer.add(element)
-      copy(isRequestedBy = None)
-    }
-
-    def add(bucket: String, element: T): SessionState[T] = {
-      buffer.add(element)
-      copy(isRequestedBy = None, lastSeenBucket = bucket)
-    }
-
-    def messages() = buffer.messages()
-
-    def mostRecent() = buffer.mostRecent()
-  }
-
   def shardingMessageExtractor(numberOfShards: Int): ShardingMessageExtractor[ChatRoomCmd, ChatRoomCmd] =
     new ShardingMessageExtractor[ChatRoomCmd, ChatRoomCmd] {
       override def entityId(cmd: ChatRoomCmd): String =
@@ -71,6 +45,32 @@ object ChatRoomSession {
       override def unwrapMessage(cmd: ChatRoomCmd): ChatRoomCmd =
         cmd
     }
+
+  final case class ChatRoomSessionState[T: scala.reflect.ClassTag] private (
+      buffer: RingBuffer[T],
+      activeBucket: String,
+      isHistoryRequestedBy: Option[Participant]) {
+
+    def this(capacity: Int, lastSeenBucket: String) =
+      this(new RingBuffer[T](capacity), lastSeenBucket, None)
+
+    def fetchRequested(user: Participant): ChatRoomSessionState[T] =
+      copy(isHistoryRequestedBy = Some(user))
+
+    def add(element: T): ChatRoomSessionState[T] = {
+      buffer.add(element)
+      copy(isHistoryRequestedBy = None)
+    }
+
+    def add(bucket: String, element: T): ChatRoomSessionState[T] = {
+      buffer.add(element)
+      copy(isHistoryRequestedBy = None, activeBucket = bucket)
+    }
+
+    def messages() = buffer.messages()
+
+    def mostRecent() = buffer.mostRecent()
+  }
 
   final case class ChatRoomHub(
       sink: Sink[LiveClientMessage, NotUsed],
@@ -121,7 +121,7 @@ object ChatRoomSession {
         val (chatRoomSessionsSink, ks0) = ChatSessionExtension(ctx.system).chatSessionSharedSink
         kss.putIfAbsent(ChatName("session-sinks"), ks0)
 
-        val sessionState = new SessionState[LiveServerMessage](1 << 4, lastSeenBucket)
+        val sessionState = new ChatRoomSessionState[LiveServerMessage](1 << 4, lastSeenBucket)
         recentMessages.foreach(sessionState.add)
 
         val (((sink, recentHistoryRequestQueue), ks), src) =
@@ -140,18 +140,19 @@ object ChatRoomSession {
               case (sessionState, cmd) =>
                 cmd.asMessage.sealedValue match {
                   case SealedValue.LiveServerMessage(cmd) =>
-                    val ts = cmd.timeUuid.toUnixTs()
-                    val currentBucket = CassandraStore
+                    val candidateBucket = CassandraStore
                       .formatterMM
-                      .format(ZonedDateTime.ofInstant(Instant.ofEpochMilli(ts), CassandraStore.UTC))
+                      .format(
+                        ZonedDateTime.ofInstant(Instant.ofEpochMilli(cmd.timeUuid.toUnixTs()), CassandraStore.UTC)
+                      )
 
-                    if (sessionState.lastSeenBucket != currentBucket)
+                    if (sessionState.activeBucket != candidateBucket)
                       sessionState.add(
-                        currentBucket,
-                        cmd.withBucketName(BucketName(currentBucket)).withIsNewBucketStarted(true),
+                        candidateBucket,
+                        cmd.withBucketName(BucketName(candidateBucket)).withIsNewBucketStarted(true),
                       )
                     else
-                      sessionState.add(cmd.withBucketName(BucketName(currentBucket)))
+                      sessionState.add(cmd.withBucketName(BucketName(candidateBucket)))
 
                   case SealedValue.FlushRecentHistory(cmd) =>
                     sessionState.fetchRequested(cmd.user)
@@ -161,12 +162,12 @@ object ChatRoomSession {
                     sessionState
                 }
             }
-            .map { state =>
-              state.isRequestedBy match {
+            .map { sessionState =>
+              sessionState.isHistoryRequestedBy match {
                 case Some(user) =>
-                  RecentHistoryMessage(user, state.messages())
+                  RecentHistoryMessage(user, sessionState.messages())
                 case None =>
-                  state.mostRecent()
+                  sessionState.mostRecent()
               }
             }
             .alsoTo(chatRoomSessionsSink)
@@ -179,7 +180,7 @@ object ChatRoomSession {
         val chatRoomHub = ChatRoomHub(sink, src)
 
         val settings = StreamRefAttributes
-          .subscriptionTimeout(2.seconds)
+          .subscriptionTimeout(3.seconds)
           .and(org.apache.pekko.stream.Attributes.inputBuffer(4, 4))
         val srcRef: SourceRef[ServerCmd] =
           chatRoomHub.src.runWith(StreamRefs.sourceRef[ServerCmd]().withAttributes(settings))
