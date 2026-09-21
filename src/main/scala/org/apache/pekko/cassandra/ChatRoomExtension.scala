@@ -41,17 +41,11 @@ object ChatRoomExtension extends ExtensionId[ChatRoomExtension] with ExtensionId
     def cast(p: Promise[?]): Promise[Out]
   }
 
-  given CmdResult[SealedValue.GetLastBucket] with {
+  given CmdResult[SealedValue.GetRecentHistory] with {
     type Out = (String, Seq[ServerCmd])
 
     def cast(p: Promise[?]) = p.asInstanceOf[Promise[Out]]
   }
-
-  /*given CmdResult[SealedValue.GetRecentHistory] with {
-    type Out = Seq[ServerCmd]
-
-    def cast(p: Promise[?]) = p.asInstanceOf[Promise[Out]]
-  }*/
 
   override def get(system: ActorSystem): ChatRoomExtension = super.get(system)
 
@@ -201,31 +195,17 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
       }
       .mapAsyncUnordered(parallelism) { (cmd, p) =>
         cmd.asMessage.sealedValue match {
-          case SealedValue.GetLastBucket(c) =>
+          case SealedValue.GetRecentHistory(c) =>
             val f =
               getBucketNames(getLastNBucketsStmt.bind(c.chat.raw(), numOfBucket)).flatMap { bucketNames =>
                 fetchRecentHistory(bucketNames, SortedSet.empty[LiveServerMessage], c.chat.raw(), pageSize).map { rows =>
                   (bucketNames.headOption.getOrElse(""), rows)
                 }
               }
-            f.onComplete(summon[CmdResult[SealedValue.GetLastBucket]].cast(p).tryComplete(_))(
-              ExecutionContext.parasitic
-            )
-            f
-          /*case SealedValue.GetRecentHistory(c) =>
-            val f =
-              getRecentHistory(getRecentHistStmt.bind(c.chat.raw(), c.bucketName, pageSize)).flatMap { rows =>
-                if (rows.size < pageSize) {
-                  getBucketNames(getLastNBucketsStmt.bind(c.chat.raw(), numOfBucket)).flatMap { bucketNames =>
-                    fetchRecentHistory(bucketNames, SortedSet.empty[LiveServerMessage], c.chat.raw(), pageSize)
-                  }
-                } else
-                  Future.successful(rows)
-              }
             f.onComplete(summon[CmdResult[SealedValue.GetRecentHistory]].cast(p).tryComplete(_))(
               ExecutionContext.parasitic
             )
-            f*/
+            f
           case SealedValue.Empty =>
             Future.failed(new Exception("CassandraCmd.Empty"))
         }

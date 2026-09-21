@@ -21,13 +21,14 @@ import org.apache.pekko.actor.typed.ActorRefResolver
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.*
 import server.grpc.api.ChatRoomSessionApi.refineMsg
 import org.apache.pekko.cassandra.CassandraSessionExtension
+import org.apache.pekko.pattern.AskTimeoutException
 import server.grpc.api.ChatRoomSessionApi.ChatError
 import server.grpc.chat.*
 import server.grpc.chat.ServerCmdMessage.SealedValue
 import shared.Domain.*
 import shared.AppConfig
 
-import scala.util.control.NoStackTrace
+import scala.util.control.*
 
 object ChatRoomSessionApi {
 
@@ -67,12 +68,56 @@ final class ChatRoomSessionApi(
 
   given ec: ExecutionContext = system.executionContext
   given logger: Logger = system.log
-  given failoverTo: util.Timeout = util.Timeout(5.seconds)
+  given timeout: util.Timeout = util.Timeout(3.seconds)
   given replyToResolver: ActorRefResolver = ActorRefResolver(system)
   given streamRefsResolver: stream.StreamRefResolver = stream.StreamRefResolver(system)
   given cqlSession: CqlSession = CassandraSessionExtension(system).cqlSession
 
-  def post(in: Source[LiveClientMessage, NotUsed]): Source[LiveServerMessage, NotUsed] =
+  private def connect(
+      chatRoomRegion: ActorRef[ChatCmd],
+      chatRoomSessionRegion: ActorRef[ChatRoomCmd],
+      authMsg: LiveClientMessage,
+      n: Int,
+    ): Future[ChatReply] =
+    if (n > 0) {
+      chatRoomRegion
+        .ask[ChatReply](replyTo =>
+          AuthUser(authMsg.chat, authMsg.userInfo.user, authMsg.otp, ReplyTo[ChatReply].toCustom(replyTo))
+        )
+        .flatMap { reply =>
+          reply.statusCode match {
+            case StatusCode.Ok =>
+              chatRoomSessionRegion
+                .ask[ChatReply](replyTo =>
+                  ConnectRequest(authMsg.chat, authMsg.userInfo.user, authMsg.otp, ReplyTo[ChatReply].toCustom(replyTo))
+                )
+                .map { reply =>
+                  reply.statusCode match {
+                    case StatusCode.Ok =>
+                      reply
+                    case other =>
+                      throw ChatError(other.toString)
+                  }
+                }
+            case other =>
+              Future.failed(ChatError(other.toString))
+          }
+        }
+        .recoverWith {
+          case e: AskTimeoutException =>
+            org
+              .apache
+              .pekko
+              .pattern
+              .after(timeout.duration)(connect(chatRoomRegion, chatRoomSessionRegion, authMsg, n - 1))
+          case NonFatal(ex) =>
+            Future.failed(ex)
+        }
+    } else {
+      Future.failed(ChatError("Failed to connect"))
+    }
+
+  /*
     in.prefixAndTail(1).flatMapConcat {
       case (Seq(authMsg), source) =>
         Source
@@ -85,37 +130,67 @@ final class ChatRoomSessionApi(
       case _ =>
         Source.empty
     }
+   */
+  def post(in: Source[LiveClientMessage, NotUsed]): Source[LiveServerMessage, NotUsed] =
+    in.prefixAndTail(1).flatMapConcat {
+      case (Seq(authMsg), source) =>
+        Source
+          .future(
+            connect(chatRoomRegion, chatRoomSessionRegion, authMsg, 3)
+          )
+          .flatMapConcat(chatReply => source.via(mkChatRoomFlow(authMsg, chatReply)))
+      case _ =>
+        Source.empty
+    }
 
-  def postFlow(
+  def mkChatRoomFlow(
       authMsg: LiveClientMessage,
-      user: Participant,
-    ): Flow[LiveClientMessage, LiveServerMessage, NotUsed] =
-    RestartFlow
-      .withBackoff(
-        stream
-          .RestartSettings(failoverTo.duration, failoverTo.duration.plus(2.seconds), 0.2)
-          .withMaxRestarts(6, 1.minute)
-      )(() => Flow.lazyFutureFlow(() => chatRoomFlow(chatRoomSessionRegion, authMsg, user)))
+      reply: ChatReply,
+    ): Flow[LiveClientMessage, LiveServerMessage, NotUsed] = {
 
-  def auth(
-      chatRoomRegion: ActorRef[ChatCmd],
-      chat: ChatName,
-      user: Participant,
-      otp: Otp,
-      source: Source[LiveClientMessage, NotUsed],
-    ): Future[Source[LiveClientMessage, NotUsed]] =
-    chatRoomRegion
-      .ask[ChatReply](replyTo => AuthUser(chat, user, otp, ReplyTo[ChatReply].toCustom(replyTo)))
-      .map { reply =>
-        reply.statusCode match {
-          case StatusCode.Ok =>
-            source
-          case code =>
-            val msg = s"AuthUsr error: $code"
-            logger.warn(msg)
-            throw ChatError(msg)
+    val srcRef: SourceRef[ServerCmd] =
+      streamRefsResolver.resolveSourceRef[ServerCmd](reply.sourceRefStr)
+
+    val sinkRef: SinkRef[LiveClientMessage] =
+      streamRefsResolver.resolveSinkRef[LiveClientMessage](reply.sinkRefStr)
+
+    def mkFlow() =
+      Flow
+        .fromSinkAndSourceCoupled(
+          sinkRef.sink(),
+          Source
+            .futureSource {
+              chatRoomSessionRegion
+                .ask[ChatReply](replyTo =>
+                  RequestRecentHistory(authMsg.chat, authMsg.userInfo.user, ReplyTo[ChatReply].toCustom(replyTo))
+                )
+                .map(_ => srcRef.source)
+            }
+            .mapConcat { cmd =>
+              cmd.asMessage.sealedValue match {
+                case SealedValue.RecentHistoryMessage(msg) =>
+                  if (msg.user.raw() == authMsg.userInfo.user.raw())
+                    msg.recentHistory.map(refineMsg(_, authMsg.userInfo.user, appConf.default))
+                  else Seq.empty
+                case SealedValue.LiveServerMessage(msg) =>
+                  Seq(refineMsg(msg, authMsg.userInfo.user, appConf.default))
+                case _: SealedValue.FlushRecentHistory | SealedValue.Empty =>
+                  Seq.empty
+              }
+            },
+        )
+        .backpressureTimeout(5.seconds) // automatic cleanup of slow subscribers
+        .watchTermination() { (_, done) =>
+          logger.info("{}@{} StreamRef connection has been established", authMsg.chat, authMsg.userInfo.user)
+          done.onComplete { _ =>
+            logger.info("{}@{} StreamRef connection has been closed", authMsg.chat, authMsg.userInfo.user)
+            chatRoomSessionRegion.tell(Disconnect(authMsg.userInfo.user, authMsg.chat, authMsg.otp))
+          }
+          NotUsed
         }
-      }
+
+    mkFlow()
+  }
 
   def chatRoomFlow(
       chatRoomSessionRegion: ActorRef[ChatRoomCmd],
@@ -172,4 +247,37 @@ final class ChatRoomSessionApi(
             throw ChatError(msg)
         }
       }
+
+  /*
+  def postFlow(
+      authMsg: LiveClientMessage,
+      user: Participant,
+    ): Flow[LiveClientMessage, LiveServerMessage, NotUsed] =
+    RestartFlow
+      .withBackoff(
+        stream
+          .RestartSettings(timeout.duration, timeout.duration.plus(1.seconds), 0.2)
+          .withMaxRestarts(3, 20.seconds)
+      )(() => Flow.lazyFutureFlow(() => chatRoomFlow(chatRoomSessionRegion, authMsg, user)))
+
+  def auth(
+      chatRoomRegion: ActorRef[ChatCmd],
+      chat: ChatName,
+      user: Participant,
+      otp: Otp,
+      source: Source[LiveClientMessage, NotUsed],
+    ): Future[Source[LiveClientMessage, NotUsed]] =
+    chatRoomRegion
+      .ask[ChatReply](replyTo => AuthUser(chat, user, otp, ReplyTo[ChatReply].toCustom(replyTo)))
+      .map { reply =>
+        reply.statusCode match {
+          case StatusCode.Ok =>
+            source
+          case code =>
+            val msg = s"AuthUsr error: $code"
+            logger.error(msg)
+            throw ChatError(msg)
+        }
+      }
+   */
 }

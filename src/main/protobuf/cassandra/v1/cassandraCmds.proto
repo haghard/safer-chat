@@ -19,10 +19,10 @@ option (scalapb.options) = {
 message CassandraCmd {
 
   oneof sealed_value {
-    GetLatestBucketName getLastBucket = 1;
+    GetRecentHistory getRecentHistory = 1;
   }
 }
 
-message GetLatestBucketName {
+message GetRecentHistory {
   string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
 }
