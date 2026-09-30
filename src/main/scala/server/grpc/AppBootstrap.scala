@@ -154,7 +154,7 @@ object AppBootstrap {
 
   def grpc(
       appCfg: AppConfig,
-      grpcService: HttpRequest => Future[HttpResponse],
+      grpcHandler: HttpRequest => Future[HttpResponse],
       kss: ConcurrentHashMap[ChatName, KillSwitch],
     )(using sys: ActorSystem[?]
     ): Unit = {
@@ -171,13 +171,13 @@ object AppBootstrap {
     Http()(using sys)
       .newServerAt(host, appCfg.grpcPort)
       .enableHttps(serverHttpContext(sys.log))
-      .bind(grpcService)
+      .bind(grpcHandler)
       .onComplete {
         case Failure(ex) =>
           logger.error(s"Shutting down. Couldn't bind to $host:${appCfg.grpcPort}", ex)
           shutdown.run(BindFailure)
         case Success(binding) =>
-          logger.info("{} GRPC on {}", Bootstrap.APP_NAME, appCfg.grpcPort)
+          logger.info("{} GRPC on {}:{}", Bootstrap.APP_NAME, host, appCfg.grpcPort)
           logger.info(s"""
                |★ ★ ★ ★ ★ ★ ★ ★ ★ ActorSystem(${sys.name}) ★ ★ ★ ★ ★ ★ ★ ★ ★
                |${sys.printTree}

@@ -110,7 +110,7 @@ object ChatRoomSession {
 
         active(
           ChatRoomState(chatName),
-          ChatRoomExtension(ctx.system).readQueue,
+          ChatExtension(ctx.system).readChatHistoryQueue,
           kss,
         )
       }
@@ -152,12 +152,13 @@ object ChatRoomSession {
               )
             )
             .mergeMat(Source.queue[ServerCmd](1 << 7, OverflowStrategy.backpressure))(Keep.both)
+            // statefulMap ?
             .scan(sessionState) {
               case (sessionState, cmd) =>
                 cmd.asMessage.sealedValue match {
                   case SealedValue.LiveServerMessage(cmd) =>
                     val candidateBucket = CassandraStore
-                      .formatterMM
+                      .formatterYYMM
                       .format(
                         ZonedDateTime.ofInstant(Instant.ofEpochMilli(cmd.timeUuid.toUnixTs()), CassandraStore.UTC)
                       )
@@ -169,7 +170,7 @@ object ChatRoomSession {
                         cmd.userInfo.user,
                       )
                     else
-                      sessionState.add(cmd.withBucketName(BucketName(candidateBucket)), cmd.userInfo.user)
+                      sessionState.add(cmd.withBucketName(BucketName(sessionState.activeBucket)), cmd.userInfo.user)
 
                   case SealedValue.FlushRecentHistory(cmd) =>
                     sessionState.fetchRequested(cmd.user)

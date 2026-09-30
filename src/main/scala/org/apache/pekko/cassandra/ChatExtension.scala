@@ -17,7 +17,7 @@ import org.apache.pekko.actor.typed.scaladsl.adapter.ClassicActorSystemOps
 import org.apache.pekko.persistence.state.scaladsl.GetObjectResult
 import org.apache.pekko.stream.*
 import org.apache.pekko.stream.scaladsl.*
-import server.grpc.chat.{ LiveServerMessage, ServerCmd }
+import server.grpc.chat.*
 import server.grpc.state.ChatState
 import shared.Domain.*
 
@@ -25,38 +25,45 @@ import java.time.*
 import scala.concurrent.*
 import scala.jdk.FutureConverters.CompletionStageOps
 import scala.util.control.NonFatal
-import scala.collection.immutable.{ HashSet, SortedSet }
+import scala.collection.immutable.*
 import CassandraStore.*
 import com.codahale.metrics.Counter
 import server.grpc.ChatRoom
-import com.domain.chat.session.cassandra.commands.CassandraCmd
+import com.domain.chat.session.cassandra.commands.*
 import com.domain.chat.session.cassandra.commands.CassandraCmdMessage.SealedValue
-import ChatRoomExtension.*
+import ChatExtension.*
 
-object ChatRoomExtension extends ExtensionId[ChatRoomExtension] with ExtensionIdProvider {
+object ChatExtension extends ExtensionId[ChatExtension] with ExtensionIdProvider {
 
-  sealed trait CmdResult[T] {
+  trait CmdKey[T <: CassandraCmd] {
     type Out
-
-    def cast(p: Promise[?]): Promise[Out]
+    def safeCast(p: Promise[?]): Promise[Out]
   }
 
-  given CmdResult[SealedValue.GetRecentHistory] with {
+  given CmdKey[GetRecentHistory] with {
     type Out = (String, Seq[ServerCmd])
-
-    def cast(p: Promise[?]) = p.asInstanceOf[Promise[Out]]
+    def safeCast(p: Promise[?]): Promise[Out] = p.asInstanceOf[Promise[Out]]
   }
 
-  override def get(system: ActorSystem): ChatRoomExtension = super.get(system)
+  given CmdKey[GetHistory] with {
+    type Out = Seq[ServerCmd]
+    def safeCast(p: Promise[?]): Promise[Out] = p.asInstanceOf[Promise[Out]]
+  }
 
-  override def lookup: ChatRoomExtension.type = ChatRoomExtension
+  def mapCmdResult[C <: CassandraCmd](cmd: C, p: Promise[?])(using cmdKey: CmdKey[C]): Promise[cmdKey.Out] =
+    cmdKey.safeCast(p)
 
-  override def createExtension(system: ExtendedActorSystem): ChatRoomExtension =
-    new ChatRoomExtension(system)
+  override def get(system: ActorSystem): ChatExtension = super.get(system)
+
+  override def lookup: ChatExtension.type = ChatExtension
+
+  override def createExtension(system: ExtendedActorSystem): ChatExtension =
+    new ChatExtension(system)
 }
 
-class ChatRoomExtension(system: ActorSystem) extends Extension {
+class ChatExtension(system: ActorSystem) extends Extension {
   val profileName = "default"
+
   val logger = system.log
 
   type WriteOp = (Long, CdcEnvelopeMessage.SealedValue)
@@ -73,11 +80,10 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
 
   given cqlSession: CqlSession = sessionExt.cqlSession
 
-  val cntr: Counter = sessionExt.metricRegistry.counter(CassandraSessionExtension.cntName)
+  val counter: Counter = sessionExt.metricRegistry.counter(CassandraSessionExtension.cntName)
 
   private val parallelism = system.settings.config.getInt("cassandra.parallelism")
   private val maxBatchSize = system.settings.config.getInt("cassandra.max-batch-size")
-  private val numOfBuckets = system.settings.config.getInt("cassandra.num-of-buckets")
   private val clusterMemberDetails = Cluster(system).selfMember.clusterMemberDetails()
 
   val getChatDetailsStmt: PreparedStatement =
@@ -98,6 +104,15 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
         .build()
     )
 
+  val getHistoryStmt: PreparedStatement =
+    cqlSession.prepare(
+      SimpleStatement
+        .builder("SELECT chat, when, message FROM timeline WHERE chat=? AND time_bucket=? AND when < ? LIMIT ?")
+        .setExecutionProfileName(profileName)
+        .setConsistencyLevel(ConsistencyLevel.LOCAL_QUORUM)
+        .build()
+    )
+
   val getLastNBucketsStmt: PreparedStatement =
     cqlSession.prepare(
       SimpleStatement
@@ -107,14 +122,23 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
         .build()
     )
 
+  val getBucketsStmt: PreparedStatement =
+    cqlSession.prepare(
+      SimpleStatement
+        .builder("SELECT time_bucket FROM timeline_buckets where chat = ? and time_bucket <= ? LIMIT ?")
+        .setExecutionProfileName(profileName)
+        .setConsistencyLevel(ConsistencyLevel.LOCAL_QUORUM)
+        .build()
+    )
+
   val writeChatStateQueue =
-    writeQueueImpl(clusterMemberDetails, cntr)
+    writeQueueImpl(clusterMemberDetails, counter)
 
   val readChatStateQueue =
     readChatStateQueueImpl(getChatDetailsStmt, clusterMemberDetails)
 
-  val readQueue =
-    readHistoryQueue(clusterMemberDetails, numOfBuckets)
+  val readChatHistoryQueue =
+    readHistoryQueue(clusterMemberDetails)(using ExecutionContext.parasitic)
 
   private def getRecentHistory(
       bs: BoundStatement
@@ -145,6 +169,15 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
              |""".stripMargin)
         mostRecentMsgs
       }(ExecutionContext.parasitic)
+
+  private def getBucketName(
+      bs: BoundStatement
+    )(using cqlSession: CqlSession
+    ): Future[Option[String]] =
+    cqlSession
+      .executeAsync(bs)
+      .asScala
+      .map(rs => Option(rs.one()).map(_.getString("time_bucket")))
 
   private def getBucketNames(
       bs: BoundStatement
@@ -184,27 +217,41 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
 
   def readHistoryQueue(
       cDetails: String,
-      numOfBucket: Int,
-      pageSize: Int = 15,
+      numOfMessages: Int = 15,
+    )(using ex: ExecutionContext
     ): SourceQueueWithComplete[(CassandraCmd, Promise[?])] =
     Source
       .queue[(CassandraCmd, Promise[?])](maxBatchSize * 2, OverflowStrategy.backpressure)
-      .mapMaterializedValue { q =>
+      .mapMaterializedValue { queue =>
         logger.info(s"ReadQueue($cDetails) materialization")
-        q
+        queue
       }
       .mapAsyncUnordered(parallelism) { (cmd, p) =>
         cmd.asMessage.sealedValue match {
-          case SealedValue.GetRecentHistory(c) =>
+          case SealedValue.GetRecentHistory(cmd) =>
             val f =
-              getBucketNames(getLastNBucketsStmt.bind(c.chat.raw(), numOfBucket)).flatMap { bucketNames =>
-                fetchRecentHistory(bucketNames, SortedSet.empty[LiveServerMessage], c.chat.raw(), pageSize).map { rows =>
-                  (bucketNames.headOption.getOrElse(""), rows)
+              getBucketNames(getLastNBucketsStmt.bind(cmd.chat.raw(), numOfMessages)).flatMap { bucketNames =>
+                fetchRecentHistory(bucketNames, SortedSet.empty[LiveServerMessage], cmd.chat.raw(), numOfMessages).map {
+                  rows =>
+                    (bucketNames.headOption.getOrElse(""), rows)
                 }
               }
-            f.onComplete(summon[CmdResult[SealedValue.GetRecentHistory]].cast(p).tryComplete(_))(
-              ExecutionContext.parasitic
-            )
+            f.onComplete(mapCmdResult(cmd, p).tryComplete)
+            f
+
+          case SealedValue.GetHistory(cmd) =>
+            val limit = Option.when(cmd.pageSige > 0)(cmd.pageSige).getOrElse(numOfMessages)
+            val cmdTimeBucket = CassandraStore
+              .formatterYYMM
+              .format(
+                ZonedDateTime.ofInstant(Instant.ofEpochMilli(cmd.fromTimeUuid.toUnixTs()), CassandraStore.UTC)
+              )
+
+            val f =
+              getBucketNames(getBucketsStmt.bind(cmd.chat.raw(), cmdTimeBucket, limit)).flatMap { bucketNames =>
+                fetchRecentHistory(bucketNames, SortedSet.empty[LiveServerMessage], cmd.chat.raw(), limit)
+              }
+            f.onComplete(mapCmdResult(cmd, p).tryComplete)
             f
           case SealedValue.Empty =>
             Future.failed(new Exception("CassandraCmd.Empty"))
@@ -240,24 +287,22 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
                 case Some(row) =>
                   val participants = row.getString(0)
                   val detailsRevision = row.getLong(1)
-                  val r =
-                    GetObjectResult(
-                      Some(
-                        ChatState(
-                          name = Some(ChatName(chat)),
-                          registeredParticipants =
-                            HashSet.from(participants.split(",").map(shared.Domain.Participant(_))),
-                        )
-                      ),
-                      detailsRevision,
-                    )
-                  r
+                  GetObjectResult(
+                    Some(
+                      ChatState(
+                        name = Some(ChatName(chat)),
+                        registeredParticipants = HashSet.from(participants.split(",").map(shared.Domain.Participant(_))),
+                      )
+                    ),
+                    detailsRevision,
+                  )
+
                 case None =>
                   GetObjectResult(None, 0)
               }
             }
 
-        f.onComplete(p.tryComplete(_))(ExecutionContext.parasitic)
+        f.onComplete(p.tryComplete)(ExecutionContext.parasitic)
         f
       }
       .addAttributes(
@@ -308,9 +353,9 @@ class ChatRoomExtension(system: ActorSystem) extends Extension {
               Supervision.Resume
           }
         )
-        .mapMaterializedValue { q =>
+        .mapMaterializedValue { queue =>
           system.log.info(s"ChatRoomWriteQueue($clusterMemberDetails) materialization")
-          q
+          queue
         }
         .toMat(Sink.ignore)(Keep.left)
         .run()

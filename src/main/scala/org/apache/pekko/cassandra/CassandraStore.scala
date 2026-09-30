@@ -32,8 +32,8 @@ import scala.concurrent.duration.*
 object CassandraStore {
 
   val profileName = "default"
-  // val formatterMM = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm") for testing
-  val formatterMM = DateTimeFormatter.ofPattern("yyyy-MM")
+  val formatterYYMM = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm") // for testing
+  // val formatterYYMM = DateTimeFormatter.ofPattern("yyyy-MM")
   val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss:SSSSSS Z")
   val UTC = ZoneId.of(java.util.TimeZone.getTimeZone("UTC").getID)
   val SERVER_DEFAULT_TZ = ZoneId.of(java.util.TimeZone.getDefault().getID())
@@ -152,8 +152,8 @@ final class CassandraStore(system: ExtendedActorSystem) extends DurableStateStor
       cqlSession.execute(CassandraStore.timelineBucketDDL)
       cqlSession.execute(CassandraStore.timelineDDL)
 
-      val writeQueue = ChatRoomExtension(system).writeChatStateQueue
-      val readQueue = ChatRoomExtension(system).readChatStateQueue
+      val writeQueue = ChatExtension(system).writeChatStateQueue
+      val readQueue = ChatExtension(system).readChatStateQueue
 
       def insert(
           state: ChatRoom.State,

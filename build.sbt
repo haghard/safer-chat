@@ -12,8 +12,8 @@ val scala3Version = "3.9.0" //JDK 17 or newer is required to compile and run
 //https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.7.html
 val pekkoV = "1.7.0"
 
-val logbackVersion = "1.6.3"
-val slf4jVersion = "2.0.17"
+val logbackVersion = "1.6.4"
+val slf4jVersion = "2.0.20"
 
 //https://github.com/apache/pekko-http/tags
 val pekkoHttpV = "1.4.0" 
@@ -139,7 +139,7 @@ lazy val root = project
       "org.slf4j" % "slf4j-api" % slf4jVersion,
 
       "com.madgag.spongycastle" % "core" % "1.58.0.0",
-      "org.bouncycastle" % "bcpkix-jdk18on" % "1.85",
+      "org.bouncycastle" % "bcpkix-jdk18on" % "1.86",
 
       "io.aeron" % "aeron-driver" % "1.45.2", //pekko 1.7
       "io.aeron" % "aeron-client" % "1.45.2",
@@ -148,6 +148,9 @@ lazy val root = project
       "com.github.bastiaanjansen" % "otp-java" % "2.2.0",
       "com.datastax.oss" % "java-driver-core" % "4.17.0",
       //"org.apache.cassandra" % "java-driver-core" % "4.19.3",
+
+      //https://github.com/sebastian-alfers/akka-grpc-rich-error
+      "io.grpc" % "grpc-protobuf" % "1.84.0",
 
       //https://github.com/f4b6a3/uuid-creator
       //TODO: https://github.com/openmole/miniclust/blob/main/build.sbt

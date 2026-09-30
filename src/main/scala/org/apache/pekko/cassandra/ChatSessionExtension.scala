@@ -102,7 +102,7 @@ class ChatSessionExtension(system: ActorSystem) extends Extension {
     .transform { asyncResult =>
       asyncResult match {
         case Success(value) =>
-          logger.info(s"${Thread.currentThread().getName}: $chatName.$ts.")
+          logger.info(s"isNewBucketStarted:${cmd.isNewBucketStarted}/$chatName/$ts")
           asyncResult
         case Failure(ex) =>
           logger.error(s"Write error $chatName: $ts. Error:${ex.getMessage()}")

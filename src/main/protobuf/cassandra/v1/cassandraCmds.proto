@@ -20,9 +20,16 @@ message CassandraCmd {
 
   oneof sealed_value {
     GetRecentHistory getRecentHistory = 1;
+    GetHistory getHistory = 2;
   }
 }
 
 message GetRecentHistory {
   string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+}
+
+message GetHistory {
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  string fromTimeUuid = 2 [(scalapb.field).type = "shared.Domain.CassandraTimeUUID"];
+  int32 pageSige = 3;
 }

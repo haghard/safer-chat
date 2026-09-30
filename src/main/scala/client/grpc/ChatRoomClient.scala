@@ -13,14 +13,14 @@ import com.typesafe.config.ConfigFactory
 
 import java.nio.charset.StandardCharsets
 import java.time.{ Duration, Instant, ZonedDateTime }
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.*
 import org.slf4j.Logger
 import org.apache.pekko.*
 import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.grpc.GrpcClientSettings
 import org.apache.pekko.stream.scaladsl.Source
-import server.grpc.chat.{ LiveClientMessage, LiveServerMessage, UserInfo }
+import server.grpc.chat.*
 import org.apache.pekko.cassandra.CassandraStore.*
 import scala.util.control.NonFatal
 import _root_.shared.*
@@ -30,7 +30,7 @@ import _root_.shared.Domain.*
 object ChatRoomClient {
 
   val APP_NAME = "safer-chat"
-  val chatName = ChatName("oblivion3") // leap_of_faith
+  val chatName = ChatName("oblivion3")
   sys.props += "APP_VERSION" -> server.grpc.BuildInfo.version
   sys.props += "SERVER_HOSTNAME" -> "127.0.0.1"
 
@@ -79,25 +79,27 @@ object ChatRoomClient {
       It requires two inputs, a static value known as a secret key and a moving factor which changes each time an OTP value is generated.
       I use user.handle+salt as a secret key.
      */
-    val otp = TOTPGen.now()
+    val otp = Otp(TOTPGen.now())
 
     val coords = server.grpc.chat.Coords(43.911806, -80.099738)
+
+    val userInfo = UserInfo(
+      Participant(user.handle.toString),
+      UnsafeByteOperations.unsafeWrap(user.asX509.getBytes(StandardCharsets.UTF_8)),
+    )
     val requests: Source[LiveClientMessage, NotUsed] =
       // auth message
       Source.single(
         LiveClientMessage(
           chatName,
           Map.empty,
-          UserInfo(
-            Participant(user.handle.toString),
-            UnsafeByteOperations.unsafeWrap(user.asX509.getBytes(StandardCharsets.UTF_8)),
-          ),
+          userInfo,
           coords,
-          Otp(otp),
+          otp,
         )
       ) ++
         Source
-          .tick(3.second, 2000.millis, ())
+          .tick(3.second, 3000.millis, ())
           .zipWithIndex
           .map { case (_, i) => i }
           .takeWhile(_ < 100)
@@ -115,22 +117,33 @@ object ChatRoomClient {
             val cmd = LiveClientMessage(
               chatName,
               content,
-              UserInfo(
-                Participant(user.handle.toString),
-                UnsafeByteOperations.unsafeWrap(user.asX509.getBytes(StandardCharsets.UTF_8)),
-              ),
+              userInfo,
               coords,
-              Otp(otp),
+              otp,
             )
             cmd
           }
           .mapMaterializedValue(_ => NotUsed)
 
-    val responseStream: Source[LiveServerMessage, NotUsed] =
-      client.post(requests)
+    val responseStream: Source[LiveServerMessage, NotUsed] = client.post(requests)
 
     val done: Future[Done] =
       responseStream.runForeach(onMsg(_, user, defaultUsr, userPubKeys))
+
+      /*
+      grpcurl -d '{"chat":"oblivion3","userInfo":{"user":"BpB1m-4nZG6rMyPRVO8m7AbPvpjU7YUZIFy4ab1ve4M"}, "timeUuid":"bdb0d2d0-bc25-11f1-9af5-edaba74a10c5", "pageSige":15}' -plaintext 127.0.0.1:8080 server.grpc.chat.ChatRoomSession/GetHistory
+      client
+        .getHistory(
+          GetHistoryRequest(
+            chatName,
+            userInfo,
+            shared
+              .Domain
+              .CassandraTimeUUID("a264e880-bce9-11f1-9353-53b94ed80fb5"),
+            pageSige = 100,
+          )
+        )
+        .runForeach(onMsg(_, user, defaultUsr, userPubKeys))*/
 
     done
   }
@@ -149,7 +162,7 @@ object ChatRoomClient {
           logger.warn(s"★ ★ ★ ★ ★ ★ $sender joined ★ ★ ★ ★ ★ ★")
         }
       case None =>
-        logger.warn(s"★ ★ ★ Got invalid PubKey($sender)  ★ ★ ★")
+        logger.warn(s"★ ★ ★  Got invalid PubKey($sender)  ★ ★ ★")
     }
 
     // Example: alice wrote this msg to bob using the Bob's pub key
@@ -161,7 +174,7 @@ object ChatRoomClient {
             ZonedDateTime.ofInstant(Instant.ofEpochMilli(serverCmd.timeUuid.toUnixTs()), SERVER_DEFAULT_TZ)
           )
           logger.info(
-            s"$sender: [$msg] at $when. ${serverCmd.serializedSize}bts."
+            s"$sender: [$msg] at ${serverCmd.timeUuid} / $when. ${serverCmd.serializedSize}bts."
           )
         } catch {
           case NonFatal(ex) =>

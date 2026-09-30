@@ -176,7 +176,7 @@ object Guardian {
                     .withAllocationStrategy(allocationStrategy)
                 )
 
-              val grpcService: HttpRequest => Future[HttpResponse] =
+              val grpcHandler: HttpRequest => Future[HttpResponse] =
                 ServiceHandler.concatOrNotFound(
                   ChatRoomHandler.partial(new ChatRoomApi(chatRoomRegion)),
                   // TODO: move ChatRoomSessionApi.post to ChatRoomApi and delete ChatRoomSessionApi
@@ -185,7 +185,7 @@ object Guardian {
                   ),
                   ServerReflection.partial(List(server.grpc.admin.ChatRoom, server.grpc.chat.ChatRoomSession)),
                 )
-              AppBootstrap.grpc(appCfg, grpcService, kss)
+              AppBootstrap.grpc(appCfg, grpcHandler, kss)
             }
 
             AppBootstrap.http(appCfg)

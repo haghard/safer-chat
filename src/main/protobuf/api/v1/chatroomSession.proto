@@ -12,6 +12,8 @@ package server.grpc.chat;
 service ChatRoomSession {
 
   rpc Post (stream LiveClientMessage) returns (stream LiveServerMessage) {}
+
+  rpc GetHistory(GetHistoryRequest) returns (stream LiveServerMessage) {}
 }
 
 message UserInfo {
@@ -22,6 +24,13 @@ message UserInfo {
 message Coords {
   double lat = 1;
   double lon = 2;
+}
+
+message GetHistoryRequest {
+  string chat = 1 [(scalapb.field).type = "shared.Domain.ChatName"];
+  UserInfo userInfo = 2 [(scalapb.field).no_box = true];
+  string fromTimeUuid = 3 [(scalapb.field).type = "shared.Domain.CassandraTimeUUID"];
+  int32 pageSige = 4;
 }
 
 message LiveClientMessage {
@@ -36,7 +45,7 @@ message ServerCmd {
   oneof sealed_value {
     LiveServerMessage liveServerMessage = 1;
 
-    //internal cmds
+    //internal commands
     FlushRecentHistory flushRecentHistory = 2;
     RecentHistoryMessage recentHistoryMessage = 3;
   }
