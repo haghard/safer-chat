@@ -10,13 +10,13 @@ val scala3Version = "3.9.0" //JDK 17 or newer is required to compile and run
 
 //https://github.com/apache/pekko/tags
 //https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.7.html
-val pekkoV = "1.7.0"
+val pekkoV = "1.7.1"
 
-val logbackVersion = "1.6.4"
+val logbackVersion = "1.6.5"
 val slf4jVersion = "2.0.20"
 
 //https://github.com/apache/pekko-http/tags
-val pekkoHttpV = "1.4.0" 
+val pekkoHttpV = "1.4.2"
 
 //https://github.com/apache/pekko-management/tags
 val PekkoManagementVersion = "1.2.1"
@@ -144,13 +144,13 @@ lazy val root = project
       "io.aeron" % "aeron-driver" % "1.45.2", //pekko 1.7
       "io.aeron" % "aeron-client" % "1.45.2",
 
-      "org.wvlet.airframe" %% "airframe-ulid" % "2026.2.2",
+      "org.wvlet.airframe" %% "airframe-ulid" % "2026.2.4",
       "com.github.bastiaanjansen" % "otp-java" % "2.2.0",
       "com.datastax.oss" % "java-driver-core" % "4.17.0",
       //"org.apache.cassandra" % "java-driver-core" % "4.19.3",
 
       //https://github.com/sebastian-alfers/akka-grpc-rich-error
-      "io.grpc" % "grpc-protobuf" % "1.84.0",
+      "io.grpc" % "grpc-protobuf" % "1.85.0",
 
       //https://github.com/f4b6a3/uuid-creator
       //TODO: https://github.com/openmole/miniclust/blob/main/build.sbt
@@ -176,6 +176,10 @@ lazy val root = project
       //  Key: ✔️ = Good, ⚠️ = Sub-optimal, ⛔ = Bad, 💀 = Horrible
       "com.lightbend" %% "emoji" % "1.3.0",
 
+      //https://eed3si9n.com/eval-0.4.0
+      ("com.eed3si9n.eval" % "eval" % "0.4.0").cross(CrossVersion.full),
+
+      //"com.donderom" %% "llm4s" % "0.22.1-b10273+6-68740bd2+20261013-2044-SNAPSHOT", //"0.22.0-b10273",
 
       //https://github.com/edadma/bptree
       //"io.github.edadma" %% "bptree" % "0.0.3",
@@ -272,11 +276,9 @@ lazy val root = project
       //"-XshowSettings:vm",
 
       //heap never resizes
-      "-Xms256m",
-      "-Xmx256m",
+      "-Xms256m", "-Xmx256m",
       "-XX:+AlwaysPreTouch",
       "-XX:-UseAdaptiveSizePolicy",
-
       "-XX:MaxDirectMemorySize=64m",
 
       /*"-XX:+PrintFieldLayout",*/
@@ -299,7 +301,6 @@ lazy val root = project
 
       "--add-opens", "java.base/sun.nio.ch=ALL-UNNAMED",
       "--add-opens", "java.base/java.nio=ALL-UNNAMED",
-
       //https://youtu.be/vh4qAsxegNY?list=LL
 
       //https://github.com/docker-library/docs/blob/2bb63e73456f4bc836c5e42d6871131a82e548f1/openjdk/content.md?plain=1#L56
